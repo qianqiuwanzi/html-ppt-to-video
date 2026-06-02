@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+node_modules/
+.env
+*.log
+output/
+temp/
+*.mp4
+*.wav
+*.mp3
+.DS_Store

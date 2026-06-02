@@ -1,0 +1,181 @@
+{
+  "title": "听完周鸿祎谈Agent，我总结了四点启发",
+  "theme": "tokyo-night",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "scenes": [
+    {
+      "layout": "cover",
+      "id": "s1",
+      "startTime": 0,
+      "duration": 10,
+      "data": {
+        "kicker": "AI · Agent · 趋势",
+        "title": "听完周鸿祎谈Agent<br><span class=\"gt\">我总结了四点启发</span>",
+        "subtitle": "这可能是你看过的最实在的Agent分析",
+        "tags": ["#AI", "#Agent", "#周鸿祎", "#360安全龙虾", "#科技趋势"]
+      },
+      "fx": "particle-burst"
+    },
+    {
+      "layout": "toc",
+      "id": "s2",
+      "startTime": 10,
+      "duration": 8,
+      "data": {
+        "kicker": "Agenda · 目录",
+        "title": "今天聊四点",
+        "items": [
+          { "title": "产品力", "desc": "教程越多，产品越难用" },
+          { "title": "专业化", "desc": "超级Agent是伪命题" },
+          { "title": "领导力", "desc": "管理AI而非使用AI" },
+          { "title": "成本", "desc": "Token是落地核心问题" }
+        ]
+      },
+      "fx": "gradient-wave"
+    },
+    {
+      "layout": "bullets",
+      "id": "s3",
+      "startTime": 18,
+      "duration": 24,
+      "data": {
+        "kicker": "Point 01 · 产品力",
+        "num": "01",
+        "title": "教程越多<br>产品越难用",
+        "items": [
+          "iPhone不需要说明书，七八岁孩子直接会用",
+          "但Agent流行时，网上铺天盖地全是教程",
+          "周鸿祎：360安全龙虾把复杂藏到后面",
+          "像PC从DOS走向Windows，让普通人也能用"
+        ]
+      },
+      "fx": "bokeh"
+    },
+    {
+      "layout": "bullets",
+      "id": "s4",
+      "startTime": 42,
+      "duration": 24,
+      "data": {
+        "kicker": "Point 02 · 专业化",
+        "num": "02",
+        "title": "不相信超级Agent<br>专业化才是真趋势",
+        "items": [
+          "真实公司靠分工运转：财务/法务/运营/销售",
+          "Agent也该如此：各有分工、互相协作",
+          "360安全龙虾：100+专家龙虾，开箱即用",
+          "不用从头喂数据喂流程，内置能力"
+        ]
+      },
+      "fx": "bokeh"
+    },
+    {
+      "layout": "bullets",
+      "id": "s5",
+      "startTime": 66,
+      "duration": 26,
+      "data": {
+        "kicker": "Point 03 · 领导力",
+        "num": "03",
+        "title": "硅基领导力<br>管理AI而非使用AI",
+        "items": [
+          "未来不只是使用AI，而是管理AI",
+          "德鲁克：管理本质是通过他人拿结果",
+          "很多业务骨干当Leader后还是自己冲",
+          "未来核心能力：如何和Agent协同拿结果"
+        ]
+      },
+      "fx": null
+    },
+    {
+      "layout": "comparison",
+      "id": "s6",
+      "startTime": 92,
+      "duration": 26,
+      "data": {
+        "kicker": "Point 04 · 成本",
+        "title": "Token成本<br>是Agent落地核心问题",
+        "cards": [
+          { "name": "轻量模式", "desc": "简单问答<br>替代搜索", "stat": "省 90%" },
+          { "name": "省钱模式", "desc": "内容创作<br>分析任务", "stat": "省 70%" },
+          { "name": "满血模式", "desc": "复杂决策<br>深度研究", "stat": "全力输出" }
+        ]
+      },
+      "fx": "bokeh"
+    },
+    {
+      "layout": "process-steps",
+      "id": "s7",
+      "startTime": 118,
+      "duration": 16,
+      "data": {
+        "kicker": "产品体验 · 龙虾教练",
+        "title": "引导式配置<br>零门槛创建专属龙虾",
+        "steps": [
+          "回答问题，描述你的需求",
+          "行业调研 + 方案设计",
+          "自动配置所有MD文档",
+          "生成专属龙虾，立即可用"
+        ]
+      },
+      "fx": "pulse-ring"
+    },
+    {
+      "layout": "bullets",
+      "id": "s8",
+      "startTime": 134,
+      "duration": 10,
+      "data": {
+        "kicker": "多端体验",
+        "title": "PC · 手机 · 云端<br>随时随地使用",
+        "items": [
+          "PC端：claw.360.cn 云端版",
+          "手机App：iOS / Android",
+          "接入飞书、钉钉等IM工具",
+          "云端运行，不占本地资源，安全感强"
+        ]
+      },
+      "fx": "bokeh"
+    },
+    {
+      "layout": "comparison",
+      "id": "s9",
+      "startTime": 144,
+      "duration": 11,
+      "data": {
+        "kicker": "冷静分析",
+        "title": "OpenClaw<br>没有走完最后一公里",
+        "cards": [
+          { "name": "OpenClaw", "nameColor": "#c0caf5", "desc": "✅ 开源范式创新<br><span class=\"bad-line\">❌ 产品化不足</span><br><span class=\"bad-line\">❌ 对普通人门槛高</span>" },
+          { "name": "360安全龙虾", "desc": "✅ 开箱即用<br>✅ 引导式配置<br>✅ 企业级设计", "bordered": true }
+        ]
+      },
+      "fx": "lightning"
+    },
+    {
+      "layout": "cta",
+      "id": "s10",
+      "startTime": 155,
+      "duration": 7,
+      "data": {
+        "title": "想体验专业化Agent？",
+        "url": "claw.360.cn",
+        "subtitle": "下载安装 · 零门槛上手 · 免费体验"
+      },
+      "fx": "particle-burst"
+    },
+    {
+      "layout": "thanks",
+      "id": "s11",
+      "startTime": 162,
+      "duration": 2,
+      "data": {
+        "title": "感谢观看",
+        "subtitle": "记得关注，下期见"
+      },
+      "fx": "aurora"
+    }
+  ]
+}
