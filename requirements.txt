@@ -1,0 +1,16 @@
+# Python dependencies for html-ppt-to-video
+# Install: pip install -r requirements.txt
+
+# TTS (Text-to-Speech)
+edge-tts>=6.1.9
+
+# Video processing
+ffmpeg-python>=0.2.0
+
+# Utilities
+pillow>=10.0.0
+
+# Development (optional)
+# pytest>=7.0.0
+# black>=23.0.0
+# flake8>=6.0.0
