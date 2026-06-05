@@ -27,6 +27,7 @@ const convertersDir = path.resolve(__dirname, '..', 'converters');
 const { selectTheme, selectThemeForScript } = require(path.join(convertersDir, 'select_theme'));
 const { getDefaultFX } = require(path.join(convertersDir, 'map_fx'));
 const { AVAILABLE_LAYOUTS } = require(path.join(convertersDir, 'convert_layout'));
+const { fetchWebpage, detectUrlType, needsBrowser } = require(path.join(__dirname, 'fetch_webpage'));
 
 // ═══════════════════════════════════════════════════════════
 // CONFIG
@@ -704,9 +705,11 @@ function parseArgs(argv) {
   const args = argv || process.argv.slice(2);
   const opts = {
     file: null,
+    url: null,
     text: null,
     stdin: false,
     noAI: false,
+    browser: false,
     theme: null,
     output: null,
     model: null,
@@ -719,9 +722,11 @@ function parseArgs(argv) {
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--file': opts.file = args[++i]; break;
+      case '--url': opts.url = args[++i]; break;
       case '--text': opts.text = args[++i]; break;
       case '--stdin': opts.stdin = true; break;
       case '--no-ai': opts.noAI = true; break;
+      case '--browser': opts.browser = true; break;
       case '--theme': opts.theme = args[++i]; break;
       case '--output': case '-o': opts.output = args[++i]; break;
       case '--ai-model': case '--model': opts.model = args[++i]; break;
@@ -735,11 +740,14 @@ parse_input.js — AI-driven text → scene config converter
 
 Usage:
   node parse_input.js --file article.txt [--theme tokyo-night] [-o config.json]
+  node parse_input.js --url <URL> [--browser] [-o config.json]
   node parse_input.js --text "Content..." [--no-ai]
   echo "Content..." | node parse_input.js --stdin
 
 Options:
   --file <path>       Input text file
+  --url <URL>         Fetch content from URL (auto-detects static/dynamic pages)
+  --browser           Force browser rendering for --url (for JS-heavy pages)
   --text <text>       Input text directly
   --stdin             Read from stdin
   --no-ai             Use heuristic mode (no API call)
@@ -751,6 +759,12 @@ Options:
   --height <px>       Video height (default: 1920)
   --fps <num>         Frame rate (default: 30)
   --help, -h          Show this help
+
+URL Support:
+  Supports WeChat articles, Zhihu, Bilibili, Douyin, Toutiao,
+  Jianshu, CSDN, Juejin, Weibo, Twitter/X, YouTube, Medium,
+  Substack, GitHub, and any generic webpage.
+  Auto-detects JS-heavy pages and falls back to browser rendering.
 
 Environment variables:
   OPENAI_API_KEY      Required for AI mode
@@ -765,6 +779,19 @@ Environment variables:
 }
 
 async function readInput(opts) {
+  if (opts.url) {
+    console.error(`[parse_input] Fetching URL: ${opts.url}`);
+    const webpage = await fetchWebpage(opts.url, { browser: opts.browser });
+    console.error(`[parse_input] Fetched ${webpage.content.length} chars from ${webpage.source}`);
+    // Prepend metadata as markdown heading for better scene generation
+    let text = '';
+    if (webpage.title) text += `# ${webpage.title}\n\n`;
+    if (webpage.author) text += `> 作者：${webpage.author}\n\n`;
+    text += webpage.content;
+    // Store webpage metadata for later use
+    opts._webpage = webpage;
+    return text;
+  }
   if (opts.file) {
     return fs.readFileSync(opts.file, 'utf-8');
   }
@@ -780,7 +807,7 @@ async function readInput(opts) {
       process.stdin.on('error', reject);
     });
   }
-  throw new Error('No input specified. Use --file, --text, or --stdin');
+  throw new Error('No input specified. Use --url, --file, --text, or --stdin');
 }
 
 async function main(argv) {
@@ -806,13 +833,25 @@ async function main(argv) {
 
   // Build config
   const config = {
-    title: opts.title || extractTitle(text, scenes),
+    title: opts.title || (opts._webpage && opts._webpage.title) || extractTitle(text, scenes),
     theme,
     width: opts.width,
     height: opts.height,
     fps: opts.fps,
     scenes,
   };
+
+  // Include webpage metadata if available
+  if (opts._webpage) {
+    config.source = {
+      url: opts._webpage.url,
+      title: opts._webpage.title,
+      author: opts._webpage.author,
+      date: opts._webpage.date,
+      images: opts._webpage.images,
+      fetchMethod: opts._webpage.source,
+    };
+  }
 
   // Output
   const json = JSON.stringify(config, null, 2);

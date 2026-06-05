@@ -1,0 +1,13 @@
+/* tokyo-night — html-ppt theme */
+:root {
+  --bg: #1a1b26;
+  --text-1: #c0caf5;
+  --text-2: #a9b1d6;
+  --text-3: #565f89;
+  --accent: #7aa2f7;
+  --accent-2: #bb9af7;
+  --accent-3: #7dcfff;
+  --good: #9ece6a;
+  --bad: #f7768e;
+  --radius: 16px;
+}

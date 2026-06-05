@@ -1,0 +1,250 @@
+#!/usr/bin/env node
+/**
+ * render_per_scene.js — Per-Scene 独立渲染编排脚本
+ *
+ * 每个场景独立：生成HTML → 渲染视频 → 配音 → 合并音视频
+ * 最后 FFmpeg concat 拼接所有片段
+ *
+ * 用法:
+ *   node render_per_scene.js --config config.json [--bgm bgm.mp3] [--output final.mp4]
+ *
+ * 输出结构:
+ *   output/
+ *     scene_00/index.html    # 场景0 HTML
+ *     scene_00/clip.mp4      # 场景0 渲染视频（无声）
+ *     scene_00/scene_00.mp3  # 场景0 TTS
+ *     scene_00/final.mp4     # 场景0 最终片段（配音）
+ *     scene_01/...           # 同上
+ *     ...
+ *     final.mp4              # 所有片段拼接结果
+ */
+
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+// ========== 工具路径 ==========
+function findExecutable(name) {
+  const guesses = [
+    `D:\\software\\ffmpeg-4.4-essentials_build\\bin\\${name}.exe`,
+    `C:\\Program Files\\ffmpeg\\bin\\${name}.exe`,
+  ];
+  for (const g of guesses) {
+    if (fs.existsSync(g)) return g;
+  }
+  try {
+    const out = execSync(`where ${name}`, { encoding: 'utf8', shell: 'cmd.exe', stdio: ['pipe', 'pipe', 'pipe'] });
+    return out.trim().split('\n')[0].trim().replace(/"/g, '');
+  } catch (e) {
+    return name;
+  }
+}
+const FFMPEG = findExecutable('ffmpeg');
+const FFPROBE = findExecutable('ffprobe');
+
+// ========== 加载模块 ==========
+const { generateSingleSceneHTML } = require('./converters/generate');
+const { extractSceneText, generateTTS, mergeAudioClip, concatClips, getDuration } = require('./mix_audio');
+
+// ========== 参数 ==========
+const args = process.argv.slice(2);
+let configPath = null, bgmPath = null, outputDir = null, finalOutput = null;
+let voice = 'zh-CN-YunjianNeural', speed = 20;
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--config') configPath = args[++i];
+  else if (args[i] === '--bgm') bgmPath = args[++i];
+  else if (args[i] === '--output-dir') outputDir = args[++i];
+  else if (args[i] === '--output') finalOutput = args[++i];
+  else if (args[i] === '--voice') voice = args[++i];
+  else if (args[i] === '--speed') speed = parseInt(args[++i]);
+}
+
+if (!configPath) {
+  console.log('用法: node render_per_scene.js --config config.json [--bgm bgm.mp3] [--output-dir output/] [--output final.mp4]');
+  process.exit(1);
+}
+
+// ========== 加载配置 ==========
+const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+const scenes = config.scenes || [];
+const total = scenes.length;
+
+if (outputDir === null) {
+  outputDir = path.join(path.dirname(configPath), 'per-scene-output');
+}
+if (finalOutput === null) {
+  finalOutput = path.join(outputDir, 'final.mp4');
+}
+if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+console.log('');
+console.log('╔══════════════════════════════════════════════╗');
+console.log('║   Per-Scene 独立渲染  (html-ppt-to-video)  ║');
+console.log('╚══════════════════════════════════════════════╝');
+console.log('');
+console.log(`  配置文件: ${configPath}`);
+console.log(`  输出目录: ${outputDir}`);
+console.log(`  场景数  : ${total}`);
+console.log(`  BGM     : ${bgmPath || '无'}`);
+console.log(`  音色    : ${voice} (+${speed}%)`);
+console.log(`  FFmpeg  : ${FFMPEG}`);
+console.log('');
+
+// ========== 逐场景处理 ==========
+const finalClips = [];
+
+for (let i = 0; i < total; i++) {
+  const scene = scenes[i];
+  const sceneDir = path.join(outputDir, `scene_${String(i).padStart(2, '0')}`);
+  const clipFile = path.join(sceneDir, 'clip.mp4');
+  const ttsFile = path.join(sceneDir, `scene_${String(i).padStart(2, '0')}.mp3`);
+  const finalClip = path.join(sceneDir, 'final.mp4');
+
+  console.log('━'.repeat(52));
+  console.log(`  场景 [${i + 1}/${total}]  ${scene.id}  (${scene.layout})`);
+  console.log('━'.repeat(52));
+
+  // ── Step 0: 创建输出目录 ──
+  if (!fs.existsSync(sceneDir)) fs.mkdirSync(sceneDir, { recursive: true });
+
+  // ── Step 1: 生成 TTS（基准） ──
+  console.log('  [1/4] 生成 TTS（基准）...');
+  const sceneText = extractSceneText(scene);
+  console.log(`        "${sceneText.substring(0, 40)}${sceneText.length > 40 ? '...' : ''}"`);
+
+  // 从配置文件读取配置的时长
+  const configDuration = scene.duration || 8;
+
+  if (fs.existsSync(ttsFile)) {
+    const existingDur = getDuration(ttsFile);
+    if (existingDur > 0) {
+      console.log(`        ℹ 已存在 TTS，跳过生成 (${existingDur.toFixed(1)}s)`);
+    }
+  } else {
+    const { dur: ttsDur } = generateTTS(sceneText, ttsFile, voice, speed);
+    console.log(`        ✓ ${ttsDur.toFixed(1)}s`);
+  }
+
+  // 检查 TTS 时长（仅用于日志）
+  const ttsDuration = getDuration(ttsFile);
+  console.log(`        ℹ TTS ${ttsDuration.toFixed(1)}s → 视频将按此时长渲染`);
+
+  // ── Step 2: 生成单场景 HTML（duration = 配置时长，与全量渲染一致） ──
+  console.log(`  [2/4] 生成 HTML (duration=${configDuration}s)...`);
+
+  // 复制 canvas-fx.js
+  const skillRoot = path.resolve(__dirname);
+  const cfxCandidates = [
+    path.join(skillRoot, 'canvas-fx.js'),
+    path.join(skillRoot, 'html-ppt-skill', 'canvas-fx.js'),
+    path.join(process.env.USERPROFILE || 'C:\\Users\\qianq', '.qclaw', 'skills', 'html-ppt-to-video', 'canvas-fx.js'),
+  ];
+  for (const cfxSrc of cfxCandidates) {
+    if (fs.existsSync(cfxSrc)) {
+      fs.copyFileSync(cfxSrc, path.join(sceneDir, 'canvas-fx.js'));
+      break;
+    }
+  }
+
+  try {
+    const { html, duration } = generateSingleSceneHTML(scene, config.theme, config.width, config.height, { durationOverride: ttsDuration });
+    fs.writeFileSync(path.join(sceneDir, 'index.html'), html, 'utf8');
+    console.log(`        ✓ index.html (duration=${duration}s, TTS-override=${ttsDuration.toFixed(1)}s)`);
+  } catch (err) {
+    console.error(`        ✗ HTML生成失败: ${err.message}`);
+    continue;
+  }
+
+  // ── Step 3: 渲染视频（无声，时长由配置决定） ──
+  console.log('  [3/4] 渲染视频...');
+  if (fs.existsSync(clipFile)) {
+    const dur = getDuration(clipFile);
+    if (dur > 0) {
+      console.log(`        ℹ 已存在，跳过渲染 (${dur.toFixed(1)}s)`);
+    }
+  }
+
+  try {
+    // hyperframes render <dir> — 传入目录路径（不加 index.html）
+    execSync(
+      `npx hyperframes render "${sceneDir}" -o "${clipFile}" --fps 30 --quality draft --workers 1`,
+      { encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe' }
+    );
+    const dur = getDuration(clipFile);
+    const sizeMB = (fs.statSync(clipFile).size / 1024 / 1024).toFixed(2);
+    console.log(`        ✓ clip.mp4 (${dur.toFixed(1)}s, ${sizeMB}MB)`);
+  } catch (err) {
+    // hyperframes 退出码1仍可能生成文件
+    if (fs.existsSync(clipFile) && getDuration(clipFile) > 0) {
+      const dur = getDuration(clipFile);
+      const sizeMB = (fs.statSync(clipFile).size / 1024 / 1024).toFixed(2);
+      console.warn(`        ⚠ 渲染退出码非0，但文件已生成 (${dur.toFixed(1)}s, ${sizeMB}MB)`);
+    } else {
+      const stderr = err.stderr || '';
+      const lastLine = stderr.split('\n').filter(Boolean).slice(-3).join(' | ');
+      console.error(`        ✗ 渲染失败: ${lastLine || err.message.trim()}`);
+      continue;
+    }
+  }
+
+  // ── Step 4: 合并视频 + 配音（视频已按 TTS 时长渲染，直接合并） ──
+  console.log('  [4/4] 合并音视频...');
+
+  // 混流 BGM（如有）
+  let audioToMerge = ttsFile;
+  if (bgmPath && fs.existsSync(bgmPath)) {
+    const mixedAudio = ttsFile.replace('.mp3', '_mixed.mp3');
+    try {
+      execSync(`"${FFMPEG}" -y -i "${ttsFile}" -i "${bgmPath}" ` +
+        `-filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1.0 0.12[aout]" ` +
+        `-map "[aout]" -acodec libmp3lame -b:a 192k -shortest "${mixedAudio}"`, {
+          encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
+        });
+      audioToMerge = mixedAudio;
+    } catch (e) {
+      console.warn(`        ⚠ BGM 混流失败: ${e.message.split('\n').slice(-1)[0]}`);
+    }
+  }
+
+  // 合并视频 + 配音（视频时长已匹配 TTS，无需变速）
+  try {
+    execSync(`"${FFMPEG}" -y -i "${clipFile}" -i "${audioToMerge}" ` +
+      `-c:v copy -c:a aac -b:a 192k "${finalClip}"`, {
+        encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
+      });
+    const mergedSize = (fs.statSync(finalClip).size / 1024 / 1024).toFixed(2);
+    const mergedDur = getDuration(finalClip);
+    console.log(`        ✓ final.mp4 (${mergedDur.toFixed(1)}s, ${mergedSize}MB)`);
+    finalClips.push(finalClip);
+  } catch (err) {
+    console.error(`        ✗ 合并失败: ${err.message.split('\n').slice(-1)[0]}`);
+  }
+
+  console.log('');
+}
+
+// ========== 拼接所有片段 ==========
+if (finalClips.length === 0) {
+  console.error('❌ 没有可拼接的片段');
+  process.exit(1);
+}
+
+console.log('═'.repeat(52));
+console.log(`  拼接 ${finalClips.length}/${total} 个片段...`);
+
+try {
+  concatClips(finalClips, finalOutput);
+  const finalSize = (fs.statSync(finalOutput).size / 1024 / 1024).toFixed(2);
+  const finalDur = getDuration(finalOutput);
+  console.log('');
+  console.log('╔══════════════════════════════════════════════╗');
+  console.log(`║  ✅ 完成！                                     ║`);
+  console.log(`║  输出: ${finalOutput}`);
+  console.log(`║  大小: ${finalSize} MB`);
+  console.log(`║  时长: ${finalDur.toFixed(1)}s`);
+  console.log('╚══════════════════════════════════════════════╝');
+} catch (err) {
+  console.error(`\n❌ 拼接失败: ${err.message.split('\n').slice(-1)[0]}`);
+  process.exit(1);
+}
