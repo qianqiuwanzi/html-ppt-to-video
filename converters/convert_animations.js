@@ -74,6 +74,11 @@ const ANIMATION_MAP = {
     duration: 0.8,
     ease: 'power2.out',
   },
+  'bounce-in': {
+    gsapFrom: { y: 40, opacity: 0, scale: 0.85 },
+    duration: 0.9,
+    ease: 'elastic.out(1, 0.5)',
+  },
   'glitch-in': {
     // Glitch is complex — approximate with x jitter + clipPath
     gsapFrom: { x: -6, opacity: 0 },

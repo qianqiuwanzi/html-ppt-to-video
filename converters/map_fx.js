@@ -29,6 +29,18 @@ const FX_MAP = {
   'rain':            { hf: 'matrix-rain',      duration: 20, opacity: 0.65 },
   'confetti':        { hf: 'firework',         duration: 10, opacity: 0.65, note: 'approximate' },
   'ripple':          { hf: 'pulse-ring',       duration: 15, opacity: 0.5, note: 'approximate' },
+
+  // v0.6.0: Additional 10 FX
+  'neon-grid':       { hf: 'neon-grid',        duration: 25, opacity: 0.65 },
+  'snow-fall':       { hf: 'snow-fall',        duration: 25, opacity: 0.65 },
+  'smoke-drift':     { hf: 'smoke-drift',      duration: 25, opacity: 0.65 },
+  'star-field':      { hf: 'star-field',       duration: 25, opacity: 0.65 },
+  'ripple-expand':   { hf: 'ripple-expand',    duration: 15, opacity: 0.65 },
+  'laser-sweep':     { hf: 'laser-sweep',      duration: 15, opacity: 0.65 },
+  'dna-helix':       { hf: 'dna-helix',        duration: 20, opacity: 0.65 },
+  'wave-ocean':      { hf: 'wave-ocean',       duration: 25, opacity: 0.65 },
+  'pixel-rain':      { hf: 'pixel-rain',       duration: 20, opacity: 0.65 },
+  'geo-pulse':       { hf: 'geo-pulse',        duration: 20, opacity: 0.65 },
 };
 
 /**
@@ -53,6 +65,24 @@ const DEFAULT_FX_PER_LAYOUT = {
   'timeline':        'gradient-wave',
   'big-quote':       'bokeh',
   'image-hero':      null, // No FX for image scenes
+  'stat-highlight':  'pulse-ring',
+  'fullscreen-stat': 'pulse-ring',
+  'highlight-box':   'neon-grid',
+  'numbered-list':   'geo-pulse',
+  'icon-grid':       'geo-pulse',
+  'kpi-grid':        'pulse-ring',
+  'data-table':      'neon-grid',
+  'chart-bar':       'gradient-wave',
+  'chart-line':      'gradient-wave',
+  'chart-pie':       'gradient-wave',
+  'chart-radar':     'neon-grid',
+  'diff':            'neon-grid',
+  'flow-diagram':    'geo-pulse',
+  'arch-diagram':    'geo-pulse',
+  'mindmap':         'geo-pulse',
+  'roadmap':         'gradient-wave',
+  'gantt':           'gradient-wave',
+  'comparison':      'lightning',
 };
 
 /**

@@ -18,6 +18,10 @@ description: Convert any content (webpage, text, document) to short video using 
     ↓
 [脚本生成层] AI提炼要点 → scene config JSON
     ↓
+[多样性分配层] diversity_assigner.js ← v0.6.0 新增
+    ├─ >30s: 全部 31布局 + 27动画 + 20FX 均匀分配
+    └─ ≤30s: 一半（向上取整）均匀分配
+    ↓
 [视觉转换层] converters/
     ├─ convert_theme.js     — html-ppt 36主题 → hyperframes :root CSS
     ├─ convert_layout.js    — html-ppt 31布局 → hyperframes 场景HTML + GSAP
@@ -149,33 +153,46 @@ output/
 
 academic-paper, arctic-cool, aurora, bauhaus, blueprint, catppuccin-latte, catppuccin-mocha, corporate-clean, cyberpunk-neon, dracula, editorial-serif, engineering-whiteprint, glassmorphism, gruvbox-dark, japanese-minimal, magazine-bold, memphis-pop, midcentury, minimal-white, neo-brutalism, news-broadcast, nord, pitch-deck-vc, rainbow-gradient, retro-tv, rose-pine, sharp-mono, soft-pastel, solarized-light, sunset-warm, swiss-grid, terminal-green, tokyo-night, vaporwave, xiaohongshu-white, y2k-chrome
 
-## Canvas FX映射
+## Canvas FX（20种）
 
-| html-ppt FX | hyperframes FX | 说明 |
-|-------------|---------------|------|
-| particle-burst | particle-burst | ✅ 直映射 |
-| matrix-rain | matrix-rain | ✅ 直映射 |
-| bokeh | bokeh | ✅ 直映射 |
-| aurora | aurora | ✅ 直映射 |
-| neural-net | matrix-rain | ⚠️ 近似映射 |
-| knowledge-graph | matrix-rain | ⚠️ 近似映射 |
-| confetti | firework | ⚠️ 近似映射 |
+| FX 名称 | 说明 |
+|---------|------|
+| particle-burst | 粒子爆发 |
+| matrix-rain | 矩阵雨 |
+| bokeh | 散景光斑 |
+| aurora | 极光 |
+| gradient-wave | 渐变波浪 |
+| pulse-ring | 脉冲环 |
+| trail | 轨迹拖尾 |
+| lightning | 闪电 |
+| firework | 烟花 |
+| spiral | 螺旋 |
+| neon-grid | 霓虹网格 |
+| snow-fall | 雪花飘落 |
+| smoke-drift | 烟雾飘散 |
+| star-field | 星空闪烁 |
+| ripple-expand | 涟漪扩展 |
+| laser-sweep | 激光扫描 |
+| dna-helix | DNA 双螺旋 |
+| wave-ocean | 海浪 |
+| pixel-rain | 像素雨 |
+| geo-pulse | 几何脉冲 |
 
-默认FX分配：cover→particle-burst / bullets→bokeh / comparison→lightning / cta→particle-burst / thanks→aurora
+## 🎯 多样性分配规则（v0.6.0）
 
-## 动画映射（html-ppt → GSAP）
+**自动生效**：`render_per_scene.js` 在执行前自动调用 `diversity_assigner.js`，无需手动配置。
 
-| CSS动画 | GSAP from | ease |
-|---------|-----------|------|
-| fade-up | {y:32, opacity:0} | power3.out |
-| fade-down | {y:-32, opacity:0} | power3.out |
-| rise-in | {y:60, scale:0.97, opacity:0, filter:'blur(6px)'} | power3.out |
-| zoom-pop | {scale:0.6, opacity:0} | back.out(1.3) |
-| blur-in | {opacity:0, filter:'blur(18px)'} | power2.out |
-| stagger-list | {y:30, opacity:0} + stagger:0.1 | power3.out |
-| card-flip-3d | {rotateY:-90, opacity:0} | power3.out |
+| 视频时长 | 布局 | 动画 | FX |
+|----------|------|------|-----|
+| **> 30s** | 全部 31 种 | 全部 27 种 | 全部 20 种 |
+| **≤ 30s** | 16 种（ceil(31/2)） | 14 种（ceil(27/2)） | 10 种（ceil(20/2)） |
 
-特殊动画（需手动实现）：typewriter, neon-glow, shimmer-sweep, gradient-flow, path-draw, glitch, spotlight, ripple-reveal
+**分配策略**：
+- 所有类型均匀洗牌后分配到各场景（全部自动，不保留手动指定）
+- 布局优先分配通用数据兼容的（generic），其次数据结构型的（data）
+- 动画分配跳过 `parallax-tilt`（hover 效果，视频不适用）
+
+**⚠️ 注意**：config.json 中的 `layout`、`data.animation`、`fx` 字段会被 diversity_assigner **全部覆盖**。如需固定某个场景的布局/动画/FX，请在分配后手动修改生成的 config。
 
 ## 音频后期制作（mix_audio.js）
 
@@ -211,9 +228,131 @@ node mix_audio.js `
 - **Per-Scene 模式**：✅ 完美同步，推荐使用
 - 单场景渲染有 hyperframes 启动开销（每场景额外 ~3s）
 
+## 文案撰写（网感规则）
+
+### 约束（从源头杜绝返工）
+
+> **🔴 强制规则：整体文案中必须有3句>15字的长句**
+> - 符合正常人类写作习惯，允许部分句子略长以表达完整意思
+> - 至少有3句超过15字（含标点），其余句子<=15字
+> - 示例：✅ "DeepSeek这波降价真的把我震惊到了"（17字） ❌ "每句都<=15字"（像机器人）
+> - 生成规则：长句用于表达复杂观点，短句用于节奏感
+
+### 文案开头三句
+
+| 句次 | 必须包含 | 示例 |
+|------|---------|------|
+| **第一句** | 核心问题或痛点 | "自媒体人最头疼的就是内容创作效率" |
+| **第二句** | 解决方案(产品名) | "有了美图 RoboNeo,一个人搞定一个团队" |
+| **第三句** | 核心价值 | "AI自动生成内容,速度快10倍" |
+
+❌ 禁止无意义寒暄（"说实话"、"讲真"仅必要时用）
+
+### 8段式结构
+
+| # | 阶段 | 内容 |
+|---|------|------|
+| 1 | 钩子开头 | 直接点明主题/问题 |
+| 2 | 产品引入 | "有了XX,YY变简单" |
+| 3 | 核心价值 | "效果Z,效率提升N倍" |
+| 4 | 卖点展开 | 逐条说明产品能力 |
+| 5 | 社会证明 | 数据/用户量支撑 |
+| 6 | 使用感受 | "用了X,我真香了" |
+| 7 | 行动引导 | "一行命令就能跑起来" |
+| 8 | 互动结尾 | "你更看重哪个?评论区告诉我" |
+
+**必须包含**：直接点明主题 + 产品名/品牌名 + 主观观点 + 专业词通俗化 + 对比吐槽 + 互动钩子
+**禁止**：无意义寒暄 / 说明书式 / 空洞口号 / 没有感情的陈述句 / 没有互动的结尾
+
+### 互动结尾模板（必选其一）
+
+- 选择题型：`你更看重{A}还是{B}?评论区告诉我 👇`
+- 场景提问型：`你们团队用什么{场景}?求推荐 👀`
+- 钩子型：`关注我,每天带你发现一个{主题} 🔔`
+
+---
+
+## 竖屏布局规范
+
+**三区域结构(1080x1920)**：
+
+| 区域 | 高度范围 | 占比 | 内容 |
+|------|---------|------|------|
+| 字幕区 | y=1248..1920px | 15% | SRT字幕,距底部80-120px |
+
+**字幕位置**：竖屏距底部80-120px（MarginV=100），字号40-48px（推荐44px），单行≤15字
+
+## 字幕规则（参考 daily-video-factory 规则 #5）
+
+> **🔴 强制规则，违反 = 拒绝发布**
+
+| # | 规则 | 最低要求 | 原因 |
+|---|------|---------|------|
+| #5 | **字幕** | ≤15字/行,**单行显示**,**音画同步**,横屏32px(标准28-36px)/竖屏44px(标准40-48px) | 禁止多行,禁止不同步 |
+
+### 规则 #5：字幕显示
+
+**执行脚本**：`inject_subtitle_gsap.js`（v0.8.0+）
+
+1. **≤15字/行**：
+   - `MAX_CHARS_PER_LINE = 15`
+   - 超出部分用 `...` 表示（禁用 `…` 非ASCII字符）
+   - 函数 `truncateLine()` 实现截断逻辑
+
+2. **单行显示**：
+   - 字幕逐行显示（非多行同时显示）
+   - 使用 GSAP 时序控制每行显示/隐藏
+   - 当前行显示时，其他行隐藏（`class="subtitle-line"` + `display: none` + `active` 类控制）
+
+3. **音画同步**：
+   - 每行显示时间 = 场景时长 / 行数（`perLineDuration = duration / lines.length`）
+   - 首行延迟 0.4s 出现（用户体验优化）
+   - 行间隔 0.1s（`LINE_GAP = 0.1`）
+
+4. **字体大小**：
+   - 竖屏（9:16）：`FONT_SIZE_VERTICAL = 44px`（标准 40-48px，距底部 80-120px）
+   - 横屏（16:9）：`FONT_SIZE_HORIZONTAL = 32px`（标准 28-36px）
+   - 通过 `orientation` 参数自动选择（`vertical` | `horizontal`）
+
+5. **竖屏字幕位置**：
+   - `BOTTOM_OFFSET = 100px`（距底部 80-120px 中值，MarginV=100）
+   - 位于字幕区域（y=1248..1920px）
+
+6. **样式**：
+   - 背景：半透明黑色（`rgba(0,0,0,0.62)`）
+   - 文字颜色：白色（`#fff`）
+   - 圆角：10px
+   - 最大宽度：88%
+   - 字体：`Inter`, sans-serif
+   - 行高：1.5
+
+### 字幕注入流程
+
+1. `render_per_scene.js` 调用 `injectSubtitleGSAP(html, subtitle, duration, orientation)`
+2. 解析字幕文本（`|` 分隔符）
+3. 截断超长行（`truncateLine()`）
+4. 注入字幕 CSS（如果还没有 `.subtitle-container`）
+5. 注入字幕 HTML（容器 + 逐行 `<span>`，全部隐藏）
+6. 注入 GSAP 逐行时序动画（淡入 + 淡出）
+
+### 已知问题修复（v0.7.0 - v0.8.0）
+
+- ✅ **v0.7.0**：修复 BOM 问题（UTF-8 BOM 导致 Node.js `require()` 失败）
+- ✅ **v0.7.0**：修复非 ASCII 字符问题（`…` 改成 `...`）
+- ✅ **v0.7.0**：修复淡出时间参数（传入 `ttsDuration`）
+- ✅ **v0.7.0**：修复字幕重复注入（移除 `converters/generate.js` 中的字幕注入代码）
+
+---
+
 ## 技术约束
 
-1. **渲染防OOM**：`--workers 1 --quality draft`（12GB内存系统）
+1. **🔴 视频总时长：45~120 秒**
+   - 生成的视频总时长必须在 **45~120 秒** 之间
+   - 短于 45 秒 → 内容太单薄，不够抖音完播率要求
+   - 超过 120 秒 → 太长，观众流失，建议拆分为多集
+   - 执行时机：场景拆分时预估总时长，超出范围时调整场景数量或单场景时长
+
+2. **渲染防OOM**：`--workers 1 --quality draft`（12GB内存系统）
 2. **FX防遮挡**：文字密集场景（bullets>4项）自动 skipFx
 3. **禁止 drawtext**：中文必须用 PIL overlay
 4. **hyperframes 铁律**：
@@ -228,26 +367,42 @@ node mix_audio.js `
 ```
 html-ppt-to-video/
 ├── SKILL.md                    # 本文件
-├── render_per_scene.js          # Per-Scene 独立渲染编排脚本（v0.5.0 新增）
-├── mix_audio.js                # 音频后期（TTS+BGM+混流，导出可复用函数）
-├── canvas-fx.js               # 10种Canvas FX实现
+├── diversity_assigner.js       # 多样性分配器（v0.6.0）
+├── render_per_scene.js          # Per-Scene 独立渲染编排脚本
+├── mix_audio.js                # 音频后期（TTS+BGM+混流）
+├── canvas-fx.js               # 20种Canvas FX实现
 ├── converters/
 │   ├── generate.js             # 主生成器（config → index.html）
-│   │                            #  --single-scene <idx>：单场景模式
 │   ├── convert_theme.js        # 主题转换器
 │   ├── convert_layout.js       # 布局转换器（31种布局）
-│   ├── convert_animations.js   # 动画映射器
+│   ├── convert_animations.js   # 动画映射器（27种动画）
 │   ├── select_theme.js         # 主题自动选择器
-│   └── map_fx.js              # Canvas FX映射器
+│   └── map_fx.js              # Canvas FX映射器（20种FX）
 ├── scripts/
-│   ├── fetch_webpage.js        # 网页获取（三级回退：HTTP→you-get→浏览器）
-│   ├── parse_input.js          # 输入解析（heuristic + AI + URL 双模式）
-│   └── post_production.py      # Python后期（备选，SRT字幕+PIL）
+│   ├── fetch_webpage.js        # 网页获取（三级回退）
+│   ├── parse_input.js          # 输入解析
+│   └── post_production.py      # Python后期（备选）
 └── assets/
-    └── themes/                 # hyperframes 主题CSS（35+主题）
+    └── themes/                 # 35+主题CSS
 ```
 
 ## 版本
+
+- v0.6.0 (2026-06-05): 多样性分配 + Canvas FX 扩展 ✅
+  - ✅ 新增 `diversity_assigner.js`：核心分配器
+  - ✅ 规则：>30s 用全部 31布局+27动画+20FX，≤30s 用一半
+  - ✅ `render_per_scene.js` 自动集成分配器（渲染前自动分配）
+  - ✅ `canvas-fx.js`：10种 → 20种 FX（新增 neon-grid, snow-fall, smoke-drift, star-field, ripple-expand, laser-sweep, dna-helix, wave-ocean, pixel-rain, geo-pulse）
+  - ✅ `convert_animations.js`：26种 → 27种（新增 bounce-in）
+  - ✅ `map_fx.js`：扩展 FX 映射到 20 种，覆盖全部布局默认 FX
+  - ✅ `generate.js`：`_guessAnimation` 覆盖全部 31 种布局
+  - ✅ 全部自动分配，覆盖用户手动指定（保证多样性最大化）
+
+- v0.7.0 (2026-06-05): 多样性分配器根因修复 ✅
+  - ✅ 修复 `explodeScenes` 子场景共享 `data` 引用导致动画覆盖（deep clone）
+  - ✅ 修复动画分配 27/27（之前 7/27，根因：子场景 `data` 是浅拷贝，同一父场景的所有子场景共享同一 `data` 对象）
+  - ✅ `assignDiversity` 使用 `JSON.parse(JSON.stringify(...))` deep clone
+  - ✅ 测试通过：7 场景 → 35 子场景，布局 31/31，动画 27/27 ✅，FX 20/20
 
 - v0.5.0 (2026-06-04): Per-Scene 独立渲染 ✅
   - ✅ generate.js: 添加 `generateSingleSceneHTML()` + `--single-scene <idx>` CLI

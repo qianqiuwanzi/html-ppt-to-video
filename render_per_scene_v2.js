@@ -187,9 +187,7 @@ for (let i = 0; i < total; i++) {
       console.log(`        ℹ 注入字幕: "${scene.data.subtitle.substring(0, 30)}..."`);
       try {
         const { injectSubtitleGSAP } = require('./inject_subtitle_gsap');
-        // v0.7.0：传入 ttsDuration + orientation，支持逐行时序+音画同步
-        const orientation = (config.width > config.height) ? 'horizontal' : 'vertical';
-        const updatedHtml = injectSubtitleGSAP(html, scene.data.subtitle, ttsDuration, orientation);
+        const updatedHtml = injectSubtitleGSAP(html, scene.data.subtitle);
         fs.writeFileSync(htmlFile, updatedHtml, 'utf8');
         console.log(`        ✓ 字幕已注入`);
       } catch (e2) {

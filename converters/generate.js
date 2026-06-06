@@ -53,6 +53,8 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-ser
 .s-thanks h1 { font-size: 120px; font-weight: 900; }
 .gt { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 .s-thanks .sub { font-size: 40px; color: var(--text-dim); margin-top: 28px; }
+.subtitle-overlay { position: fixed; bottom: 100px; left:0; width:100%; text-align: center; padding:0 48px; box-sizing: border-box; opacity:0; z-index:15; pointer-events: none; }
+.subtitle-text { display: inline-block; background: rgba(0,0,0,0.62); color: #fff; font-size:38px; line-height:1.5; padding:10px 24px; border-radius:10px; max-width:88%; word-break:break-all; font-family: 'Inter',sans-serif; }
 .quote-wrap { display: flex; flex-direction: column; justify-content: center; align-items: center; flex:1; text-align: center; }
 .big-quote-text { font-size: 48px; font-weight: 600; line-height: 1.4; color: var(--text); font-style: italic; position: relative; padding: 0 40px; }
 .quote-author { font-size: 30px; color: var(--text-dim); margin-top: 24px; font-style: normal; }
@@ -157,8 +159,22 @@ function convertThemeCSS(themeName) {
 
 // ===== Animation helpers =====
 function _guessAnimation(layoutName) {
-  const pref = { 'cover': 'fade-up', 'big-quote': 'fade-up', 'stat-highlight': 'zoom-pop', 'cta': 'zoom-pop', 'thanks': 'fade-up' };
-  return pref[layoutName] || null;
+  const pref = {
+    'cover': 'fade-up', 'big-quote': 'fade-up', 'stat-highlight': 'zoom-pop',
+    'cta': 'zoom-pop', 'thanks': 'fade-up', 'toc': 'stagger-list',
+    'bullets': 'stagger-list', 'numbered-list': 'stagger-list', 'icon-grid': 'stagger-list',
+    'two-column': 'fade-left', 'three-column': 'fade-right',
+    'comparison': 'fade-up', 'process-steps': 'stagger-list',
+    'kpi-grid': 'zoom-pop', 'fullscreen-stat': 'zoom-pop',
+    'highlight-box': 'blur-in', 'pros-cons': 'fade-up',
+    'timeline': 'fade-left', 'roadmap': 'fade-up', 'gantt': 'fade-up',
+    'data-table': 'fade-up', 'chart-bar': 'fade-up', 'chart-line': 'fade-up',
+    'chart-pie': 'zoom-pop', 'chart-radar': 'zoom-pop',
+    'code': 'fade-up', 'diff': 'fade-up', 'terminal': 'fade-up',
+    'flow-diagram': 'stagger-list', 'arch-diagram': 'stagger-list',
+    'mindmap': 'stagger-list', 'image-hero': 'kenburns',
+  };
+  return pref[layoutName] || 'fade-up';
 }
 
 function _sceneMainSelector(sceneId, layoutName) {
@@ -373,6 +389,8 @@ function generateSingleSceneHTML(scene, theme, width = 1080, height = 1920, opts
 
   const sceneData = Object.assign({}, scene.data, { id: scene.id });
   const result = layoutGen(sceneData);
+
+  // [Bug3 修复] 不再此处注入字幕，改由 inject_subtitle_gsap.js 统一注入（带 GSAP 动画）
 
   // Build GSAP lines for this single scene (timeline starts at 0)
   const gsapLines = [];

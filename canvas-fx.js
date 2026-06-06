@@ -321,6 +321,230 @@
     }
   };
 
+  // ─── neon-grid (v0.6.0) ────────────────────────────
+  const NeonGrid = {
+    init(w, h) { this.t = 0; },
+    draw(ctx, t) {
+      const spacing = 60;
+      ctx.globalAlpha = 0.12;
+      ctx.strokeStyle = hsl(320, 90, 65, 0.3);
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= W; x += spacing) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+      }
+      for (let y = 0; y <= H; y += spacing) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+      }
+      const pulse = 0.5 + 0.5 * Math.sin(t * 2);
+      ctx.globalAlpha = pulse * 0.15;
+      for (let x = 0; x <= W; x += spacing) {
+        for (let y = 0; y <= H; y += spacing) {
+          ctx.beginPath(); ctx.arc(x, y, 2 + pulse * 3, 0, Math.PI * 2);
+          ctx.fillStyle = hsl(280, 90, 70, pulse * 0.5);
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+  };
+
+  // ─── snow-fall (v0.6.0) ─────────────────────────────
+  const SnowFall = {
+    init(w, h) {
+      this.flakes = [];
+      for (let i = 0; i < 120; i++) {
+        this.flakes.push({ x: rand(0, w), y: rand(0, h), r: rand(2, 6), speed: rand(0.5, 2), drift: rand(-0.3, 0.3), opacity: rand(0.3, 0.8) });
+      }
+    },
+    draw(ctx, t) {
+      for (const f of this.flakes) {
+        f.y += f.speed;
+        f.x += f.drift + Math.sin(t + f.x * 0.01) * 0.3;
+        if (f.y > H + 10) { f.y = -10; f.x = rand(0, W); }
+        ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${f.opacity})`;
+        ctx.fill();
+      }
+    }
+  };
+
+  // ─── smoke-drift (v0.6.0) ───────────────────────────
+  const SmokeDrift = {
+    init(w, h) {
+      this.puffs = [];
+      for (let i = 0; i < 20; i++) {
+        this.puffs.push({ x: rand(W * 0.2, W * 0.8), y: rand(H * 0.5, H), r: rand(40, 120), speed: rand(0.2, 0.6), drift: rand(-0.2, 0.2), opacity: rand(0.04, 0.1), phase: rand(0, Math.PI * 2) });
+      }
+    },
+    draw(ctx, t) {
+      for (const p of this.puffs) {
+        p.y -= p.speed;
+        p.x += p.drift + Math.sin(t * 0.5 + p.phase) * 0.5;
+        if (p.y < -p.r * 2) { p.y = H + p.r; p.x = rand(W * 0.2, W * 0.8); }
+        const pulse = p.opacity * (0.7 + 0.3 * Math.sin(t + p.phase));
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+        g.addColorStop(0, `rgba(180,180,200,${pulse})`);
+        g.addColorStop(1, `rgba(180,180,200,0)`);
+        ctx.fillStyle = g; ctx.fill();
+      }
+    }
+  };
+
+  // ─── star-field (v0.6.0) ────────────────────────────
+  const StarField = {
+    init(w, h) {
+      this.stars = [];
+      for (let i = 0; i < 200; i++) {
+        this.stars.push({ x: rand(0, w), y: rand(0, h), z: rand(1, 5), brightness: rand(0.3, 1) });
+      }
+    },
+    draw(ctx, t) {
+      for (const s of this.stars) {
+        const twinkle = s.brightness * (0.6 + 0.4 * Math.sin(t * 3 + s.x * 0.1 + s.y * 0.1));
+        const r = s.z * 0.8;
+        ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(220,230,255,${twinkle})`;
+        ctx.fill();
+      }
+    }
+  };
+
+  // ─── ripple-expand (v0.6.0) ─────────────────────────
+  const RippleExpand = {
+    init(w, h) { this.t = 0; this.cx = w / 2; this.cy = h / 2; },
+    draw(ctx, t) {
+      for (let i = 0; i < 4; i++) {
+        const phase = (t * 0.8 + i * 0.8) % 4;
+        const r = phase * Math.max(W, H) * 0.25;
+        const alpha = Math.max(0, (1 - phase / 4) * 0.2);
+        ctx.beginPath(); ctx.arc(this.cx, this.cy, r, 0, Math.PI * 2);
+        ctx.strokeStyle = hsl(200 + i * 30, 80, 65, alpha);
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+  };
+
+  // ─── laser-sweep (v0.6.0) ───────────────────────────
+  const LaserSweep = {
+    init(w, h) { this.nextSweep = 0; this.beams = []; },
+    draw(ctx, t) {
+      if (t >= this.nextSweep) {
+        this.beams.push({ t: t, dur: rand(0.3, 0.8), x: rand(0, W), hue: rand(0, 360) });
+        this.nextSweep = t + rand(0.5, 2.0);
+      }
+      for (let i = this.beams.length - 1; i >= 0; i--) {
+        const b = this.beams[i];
+        const age = t - b.t;
+        if (age > b.dur) { this.beams.splice(i, 1); continue; }
+        const alpha = (1 - age / b.dur) * 0.5;
+        ctx.beginPath(); ctx.moveTo(b.x, 0); ctx.lineTo(b.x, H);
+        ctx.strokeStyle = hsl(b.hue, 90, 60, alpha);
+        ctx.lineWidth = 2 + (1 - age / b.dur) * 6;
+        ctx.shadowColor = hsl(b.hue, 90, 60, alpha * 0.5);
+        ctx.shadowBlur = 20;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+    }
+  };
+
+  // ─── dna-helix (v0.6.0) ──────────────────────────────
+  const DnaHelix = {
+    init(w, h) { this.t = 0; },
+    draw(ctx, t) {
+      const n = 40;
+      const amp = W * 0.15;
+      const cx = W / 2;
+      for (let i = 0; i < n; i++) {
+        const frac = i / n;
+        const y = frac * H;
+        const angle = frac * Math.PI * 4 + t * 1.5;
+        const x1 = cx + Math.cos(angle) * amp;
+        const x2 = cx + Math.cos(angle + Math.PI) * amp;
+        const depth = (Math.sin(angle) + 1) / 2;
+        ctx.beginPath(); ctx.arc(x1, y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = hsl(220, 80, 65, 0.3 + depth * 0.4);
+        ctx.fill();
+        ctx.beginPath(); ctx.arc(x2, y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = hsl(320, 80, 65, 0.3 + (1 - depth) * 0.4);
+        ctx.fill();
+        if (i % 3 === 0) {
+          ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y);
+          ctx.strokeStyle = `rgba(180,200,255,${0.1 + depth * 0.1})`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+    }
+  };
+
+  // ─── wave-ocean (v0.6.0) ───────────────────────────
+  const WaveOcean = {
+    init(w, h) { this.t = 0; },
+    draw(ctx, t) {
+      for (let layer = 0; layer < 5; layer++) {
+        const baseY = H * 0.55 + layer * 60;
+        const alpha = 0.06 - layer * 0.008;
+        ctx.beginPath();
+        for (let x = 0; x <= W; x += 4) {
+          const y = baseY + Math.sin(x * 0.006 + t * (0.8 + layer * 0.2)) * 25 + Math.sin(x * 0.012 + t * 1.2) * 12;
+          x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+        ctx.fillStyle = hsl(210 + layer * 5, 75, 55, alpha);
+        ctx.fill();
+      }
+    }
+  };
+
+  // ─── pixel-rain (v0.6.0) ────────────────────────────
+  const PixelRain = {
+    init(w, h) {
+      this.pixels = [];
+      for (let i = 0; i < 80; i++) {
+        this.pixels.push({ x: randInt(0, W / 8) * 8, y: rand(0, h), speed: rand(2, 8), size: rand(4, 12), hue: rand(160, 280) });
+      }
+    },
+    draw(ctx, t) {
+      for (const p of this.pixels) {
+        p.y += p.speed;
+        if (p.y > H + p.size) { p.y = -p.size; p.x = randInt(0, W / 8) * 8; }
+        ctx.fillStyle = hsl(p.hue, 80, 60, 0.4);
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+      }
+    }
+  };
+
+  // ─── geo-pulse (v0.6.0) ─────────────────────────────
+  const GeoPulse = {
+    init(w, h) {
+      this.shapes = [];
+      for (let i = 0; i < 15; i++) {
+        this.shapes.push({ x: rand(0, w), y: rand(0, h), size: rand(20, 80), sides: randInt(3, 6), speed: rand(0.3, 1), phase: rand(0, Math.PI * 2), hue: rand(0, 360) });
+      }
+    },
+    draw(ctx, t) {
+      for (const s of this.shapes) {
+        const pulse = 0.5 + 0.5 * Math.sin(t * s.speed + s.phase);
+        const r = s.size * (0.5 + pulse * 0.5);
+        const alpha = pulse * 0.12;
+        ctx.beginPath();
+        for (let i = 0; i <= s.sides; i++) {
+          const angle = (i / s.sides) * Math.PI * 2 - Math.PI / 2 + t * 0.2;
+          const px = s.x + Math.cos(angle) * r;
+          const py = s.y + Math.sin(angle) * r;
+          i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = hsl(s.hue, 70, 60, alpha);
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+  };
+
   // ─── Mount ──────────────────────────────────────────
   window.CFX = {
     'particle-burst': ParticleBurst,
@@ -333,6 +557,16 @@
     'lightning':       Lightning,
     'firework':        Firework,
     'spiral':          Spiral,
+    'neon-grid':       NeonGrid,
+    'snow-fall':       SnowFall,
+    'smoke-drift':     SmokeDrift,
+    'star-field':      StarField,
+    'ripple-expand':   RippleExpand,
+    'laser-sweep':     LaserSweep,
+    'dna-helix':       DnaHelix,
+    'wave-ocean':      WaveOcean,
+    'pixel-rain':      PixelRain,
+    'geo-pulse':       GeoPulse,
   };
 
 })();

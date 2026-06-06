@@ -77,7 +77,7 @@ const DEFAULT_CONFIG = {
   // Maximum scene duration
   maxDuration: 15,
   // Target total video duration range (seconds)
-  targetDuration: { min: 60, max: 180 },
+  targetDuration: { min: 45, max: 120 },
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -561,7 +561,7 @@ async function callOpenAI(text, options = {}) {
 规则：
 1. 第一个场景必须是 cover
 2. 最后一个场景必须是 cta
-3. 每个场景时长 4-15 秒，总时长 60-180 秒
+3. 每个场景时长 4-15 秒，总时长 45-120 秒（强制约束）
 4. 内容要精炼，每个 bullets 场景不超过 5 条
 5. 提取关键数据和数字，用 stat-highlight 或 fullscreen-stat 展示
 6. 有对比内容用 comparison，有步骤用 process-steps

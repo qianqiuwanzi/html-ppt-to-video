@@ -127,16 +127,37 @@ function generateTTS(text, ttsFile, voice = 'zh-CN-YunjianNeural', speed = 20) {
   }
 
   try {
+    // Fix: 用临时文件传参，避免 Windows 8191 字符限制
+    const os = require('os');
     const rateArg = speed >= 0 ? `+${speed}%` : `${speed}%`;
-    const cmd = `python -m edge_tts --voice ${voice} --rate=${rateArg} --text "${safeText}" --write-media "${ttsFile}"`;
-    execSync(cmd, { encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe' });
+    const tmpDir = os.tmpdir();
+    const tmpTxt = path.join(tmpDir, `tts_${Date.now()}_${Math.random().toString(36).slice(2, 9)}.txt`);
+    const tmpPy = path.join(tmpDir, `tts_run_${Date.now()}.py`);
+    fs.writeFileSync(tmpTxt, text, 'utf8');
 
-    // 等待文件写入
-    let retries = 0;
-    while (!fs.existsSync(ttsFile) && retries < 10) {
-      execSync('timeout /t 1 /nobreak > nul', { stdio: 'pipe', shell: 'cmd.exe' });
-      retries++;
-    }
+    // 写 Python  wrapper：读文件 → 调 edge_tts
+    const pyScript = `# -*- coding: utf-8 -*-
+import sys, asyncio, os
+from edge_tts import Communicate
+
+txt = open(r'${tmpTxt.replace(/'/g, "\\'")}', 'r', encoding='utf-8').read().strip()
+if not txt: sys.exit(0)
+
+def run():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    comm = Communicate(txt, voice='${voice}', rate='${rateArg}')
+    loop.run_until_complete(comm.save(r'${ttsFile.replace(/\\/g, '\\\\')}'))
+
+run()
+`;
+    fs.writeFileSync(tmpPy, pyScript, 'utf8');
+
+    execSync(`python "${tmpPy}"`, { encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe', timeout: 30000 });
+
+    // 清理临时文件
+    try { fs.unlinkSync(tmpTxt); } catch(e){}
+    try { fs.unlinkSync(tmpPy); } catch(e){}
 
     const dur = getDuration(ttsFile) || 5;
     return { file: ttsFile, dur };

@@ -42,7 +42,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 DEFAULT_VOICE = "zh-CN-YunjianNeural"
 DEFAULT_RATE = "+20%"
-DEFAULT_FFMPEG = r"D:\software\ffmpeg-4.4-essentials_build\bin\ffmpeg.exe"
+DEFAULT_FFMPEG = shutil.which('ffmpeg') or r"D:\software\ffmpeg-8.1.1-full_build\bin\ffmpeg.exe"
 DEFAULT_BGM_VOLUME = 0.15
 DEFAULT_TTS_VOLUME = 1.0
 
