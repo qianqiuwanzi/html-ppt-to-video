@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 /**
- * fetch_webpage.js — 获取任意网页内容（含JS动态渲染页面）
+ * fetch_webpage.js — 获取任意网页内容（四级静默回退）
  *
- * 三级回退策略：
- *   1. web_fetch（纯HTTP，最快）— 适合静态页面
- *   2. you-get（Python下载）— 适合视频/音频页面
- *   3. 无头浏览器（Puppeteer/Playwright）— 适合JS动态渲染页面（微信文章等）
+ * ⚠️ 核心约束：全程静默，禁止打开任何用户可见的浏览器窗口
+ *
+ * 四级回退策略：
+ *   L1: HTTP 直接获取（最快）— 适合静态页面 + 微信公众号文章（已验证有效）
+ *   L2: web_fetch（OpenClaw Agent 内置工具）— 需在 Agent 上下文中调用
+ *   L3: 无头浏览器（Puppeteer headless）— 仅 L1/L2 失败时使用
+ *   L4: online-search（搜索摘要兜底）— 最后手段
  *
  * Usage:
- *   node fetch_webpage.js <URL> [--output file.json] [--browser] [--timeout 30000]
+ *   node fetch_webpage.js <URL> [--output file.json] [--browser] [--timeout 30000] [--level L1|L2|L3|L4]
  *   node fetch_webpage.js <URL>  (outputs JSON to stdout)
  *
  * Output format:
@@ -20,14 +23,14 @@
  *     "author": "作者（可选）",
  *     "date": "发布日期（可选）",
  *     "images": ["图片URL列表"],
- *     "source": "web_fetch|you-get|browser",
+ *     "source": "http|web_fetch|browser-headless|search",
  *     "fetchedAt": "ISO时间戳"
  *   }
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execSync, spawn } = require('child_process');
+const { execSync } = require('child_process');
 const https = require('https');
 const http = require('http');
 
@@ -38,14 +41,12 @@ const http = require('http');
 const CONFIG = {
   timeout: 30000,
   userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-  // 最大正文长度（字符）
   maxContentLength: 100000,
-  // 最小正文长度（低于此值视为获取失败，触发回退）
   minContentLength: 200,
 };
 
 // ═══════════════════════════════════════════════════════════
-// 查找系统已安装的 Chrome/Edge 可执行文件
+// 查找系统 Chrome/Edge（仅用于无头模式）
 // ═══════════════════════════════════════════════════════════
 
 function findChromeExecutable() {
@@ -55,10 +56,8 @@ function findChromeExecutable() {
     path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
     path.join(process.env.ProgramFiles || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
     path.join(process.env['ProgramFiles(x86)'] || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-    // macOS
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    // Linux
     '/usr/bin/google-chrome',
     '/usr/bin/chromium-browser',
     '/usr/bin/microsoft-edge',
@@ -66,7 +65,6 @@ function findChromeExecutable() {
   for (const p of candidates) {
     try { if (fs.existsSync(p)) return p; } catch {}
   }
-  // Return undefined to let Puppeteer use its bundled Chromium
   return undefined;
 }
 
@@ -75,8 +73,7 @@ function findChromeExecutable() {
 // ═══════════════════════════════════════════════════════════
 
 const URL_PATTERNS = {
-  wechat: /mp\.weixin\.qq\.com\/s\//,
-  wechat2: /mp\.weixin\.qq\.com\/s\?/,
+  wechat: /mp\.weixin\.qq\.com\/s/,
   zhihu: /zhihu\.com/,
   bilibili: /bilibili\.com/,
   douyin: /douyin\.com/,
@@ -100,17 +97,15 @@ function detectUrlType(url) {
 }
 
 /**
- * 判断URL是否需要浏览器渲染
+ * 判断URL是否可能需要浏览器渲染（但不直接跳过L1，因为微信文章L1已验证有效）
  */
-function needsBrowser(url) {
+function isDynamicSite(url) {
   const type = detectUrlType(url);
-  // 这些站点的页面是JS动态渲染的
-  const browserRequired = ['wechat', 'wechat2', 'zhihu', 'douyin', 'toutiao', 'weibo', 'twitter', 'youtube', 'medium', 'substack'];
-  return browserRequired.includes(type);
+  return ['zhihu', 'douyin', 'weibo', 'twitter', 'youtube', 'medium', 'substack'].includes(type);
 }
 
 // ═══════════════════════════════════════════════════════════
-// Level 1: HTTP 直接获取
+// L1: HTTP 直接获取
 // ═══════════════════════════════════════════════════════════
 
 function httpGet(url, options = {}) {
@@ -127,54 +122,29 @@ function httpGet(url, options = {}) {
       },
       timeout: options.timeout || CONFIG.timeout,
     }, (res) => {
-      // Handle redirects
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         return httpGet(res.headers.location, options).then(resolve).catch(reject);
       }
-
       if (res.statusCode !== 200) {
-        reject(new Error(`HTTP ${res.statusCode}`));
+        reject(new Error('HTTP ' + res.statusCode));
         return;
-      }
-
-      let data = '';
-      // Detect encoding from headers
-      const contentType = res.headers['content-type'] || '';
-      let encoding = 'utf-8';
-      const charsetMatch = contentType.match(/charset=([^\s;]+)/i);
-      if (charsetMatch) {
-        encoding = charsetMatch[1].toLowerCase();
       }
 
       const chunks = [];
       res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
         const buffer = Buffer.concat(chunks);
-        let html;
-        if (encoding === 'utf-8' || encoding === 'utf8') {
-          html = buffer.toString('utf-8');
-        } else {
-          // For GBK/GB2312, try iconv-lite or just decode as utf-8
-          try {
-            html = buffer.toString('utf-8');
-          } catch {
-            html = buffer.toString('latin1');
-          }
-        }
-        resolve(html);
+        resolve(buffer.toString('utf-8'));
       });
     });
 
     req.on('error', reject);
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('HTTP request timeout'));
-    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('HTTP timeout')); });
   });
 }
 
 // ═══════════════════════════════════════════════════════════
-// HTML → 纯文本提取
+// HTML -> 纯文本提取
 // ═══════════════════════════════════════════════════════════
 
 function extractFromHtml(html, url) {
@@ -184,57 +154,59 @@ function extractFromHtml(html, url) {
   let date = '';
   const images = [];
 
-  // Extract title
+  // --- Title ---
   const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (titleMatch) {
-    title = decodeHtmlEntities(titleMatch[1].trim());
-  }
+  if (titleMatch) title = decodeEntities(titleMatch[1].trim());
 
-  // Extract og:title
   const ogTitleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']/i);
-  if (ogTitleMatch) {
-    title = decodeHtmlEntities(ogTitleMatch[1]);
-  }
+  if (ogTitleMatch) title = decodeEntities(ogTitleMatch[1]);
 
-  // Extract author
+  // --- Author ---
   const authorMatch = html.match(/<meta[^>]*name=["']author["'][^>]*content=["']([^"']*)["']/i)
-    || html.match(/<meta[^>]*property=["']article:author["'][^>]*content=["']([^"']*)["']/i)
-    || html.match(/<meta[^>]*name=["']twitter:creator["'][^>]*content=["']([^"']*)["']/i);
-  if (authorMatch) {
-    author = decodeHtmlEntities(authorMatch[1]);
-  }
+    || html.match(/<meta[^>]*property=["']article:author["'][^>]*content=["']([^"']*)["']/i);
+  if (authorMatch) author = decodeEntities(authorMatch[1]);
 
-  // Extract date
+  // --- Date ---
   const dateMatch = html.match(/<meta[^>]*property=["']article:published_time["'][^>]*content=["']([^"']*)["']/i)
-    || html.match(/<meta[^>]*name=["']date["'][^>]*content=["']([^"']*)["']/i)
     || html.match(/<meta[^>]*itemprop=["']datePublished["'][^>]*content=["']([^"']*)["']/i);
-  if (dateMatch) {
-    date = dateMatch[1];
-  }
+  if (dateMatch) date = dateMatch[1];
 
-  // Try to extract article content based on common patterns
+  // --- Content extraction (order matters: most specific first) ---
   let articleHtml = '';
 
-  // Pattern 1: <article> tag
-  const articleMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
-  if (articleMatch) {
-    articleHtml = articleMatch[1];
-  }
-
-  // Pattern 2: WeChat article specific
-  if (!articleHtml && /mp\.weixin\.qq\.com/.test(url)) {
-    const wxMatch = html.match(/<div[^>]*id=["']js_content["'][^>]*>([\s\S]*?)<\/div>\s*<script/i);
-    if (wxMatch) {
-      articleHtml = wxMatch[1];
+  // WeChat: js_content div (supports both id="js_content" and id='js_content')
+  if (/mp\.weixin\.qq\.com/.test(url)) {
+    // Try multiple patterns for robustness
+    const wxPatterns = [
+      /<div[^>]*id="js_content"[^>]*>([\s\S]*?)<\/div>\s*(?:<script|<div[^>]*class="rich_media_tool)/i,
+      /<div[^>]*id='js_content'[^>]*>([\s\S]*?)<\/div>\s*(?:<script|<div[^>]*class="rich_media_tool")/i,
+      /<div[^>]*id="js_content"[^>]*>([\s\S]{100,}?)<\/div>/i,
+      /<div[^>]*class="rich_media_content"[^>]*id="js_content"[^>]*>([\s\S]*?)<\/div>/i,
+    ];
+    for (const pat of wxPatterns) {
+      const m = html.match(pat);
+      if (m && m[1].length > 100) { articleHtml = m[1]; break; }
     }
-    // WeChat author
-    const wxAuthor = html.match(/<a[^>]*id=["']js_name["'][^>]*>([^<]*)<\/a>/i);
+    // WeChat author from js_name
+    const wxAuthor = html.match(/<a[^>]*id="js_name"[^>]*>([^<]*)<\/a>/i);
     if (wxAuthor) author = wxAuthor[1].trim();
+    // WeChat title from var
+    if (!title) {
+      const wxTitle = html.match(/var\s+msg_title\s*=\s*"([^"]*)"/);
+      if (wxTitle) title = wxTitle[1];
+    }
   }
 
-  // Pattern 3: Common content divs
+  // Article tag
   if (!articleHtml) {
-    const contentPatterns = [
+    const articleMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
+    if (articleMatch) articleHtml = articleMatch[1];
+  }
+
+  // Common content divs
+  if (!articleHtml) {
+    const patterns = [
+      /<div[^>]*class=["'][^"']*rich_media_content[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
       /<div[^>]*class=["'][^"']*post-content[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
       /<div[^>]*class=["'][^"']*article-content[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
       /<div[^>]*class=["'][^"']*entry-content[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
@@ -243,26 +215,23 @@ function extractFromHtml(html, url) {
       /<div[^>]*id=["']content["'][^>]*>([\s\S]*?)<\/div>/i,
       /<div[^>]*id=["']article-content["'][^>]*>([\s\S]*?)<\/div>/i,
     ];
-    for (const pattern of contentPatterns) {
-      const match = html.match(pattern);
-      if (match) {
-        articleHtml = match[1];
-        break;
-      }
+    for (const pat of patterns) {
+      const match = html.match(pat);
+      if (match && match[1].length > 100) { articleHtml = match[1]; break; }
     }
   }
 
-  // If still no content, use body
+  // Fallback: body
   if (!articleHtml) {
     const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
     articleHtml = bodyMatch ? bodyMatch[1] : html;
   }
 
-  // Extract images before stripping HTML
-  const imgMatches = articleHtml.matchAll(/<img[^>]+src=["']([^"']+)["']/gi);
-  for (const m of imgMatches) {
-    let src = m[1];
-    // Make relative URLs absolute
+  // --- Images ---
+  const imgRe = /<img[^>]+src=["']([^"']+)["']/gi;
+  let imgMatch;
+  while ((imgMatch = imgRe.exec(articleHtml)) !== null) {
+    let src = imgMatch[1];
     if (src.startsWith('//')) src = 'https:' + src;
     else if (src.startsWith('/')) {
       try { const u = new URL(url); src = u.origin + src; } catch {}
@@ -270,39 +239,25 @@ function extractFromHtml(html, url) {
     if (src.startsWith('http')) images.push(src);
   }
 
-  // Strip HTML to get plain text
   content = htmlToText(articleHtml);
-
   return { title, content, author, date, images, html: articleHtml };
 }
 
 function htmlToText(html) {
   let text = html;
-
-  // Remove scripts and styles
   text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
   text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
   text = text.replace(/<noscript[\s\S]*?<\/noscript>/gi, '');
-
-  // Preserve block elements as newlines
   text = text.replace(/<\/(p|div|h[1-6]|li|br|blockquote|tr|dt|dd|figcaption|summary|details|section|article|aside|header|footer|nav|main)>/gi, '\n');
   text = text.replace(/<br\s*\/?>/gi, '\n');
-
-  // Remove all remaining HTML tags
   text = text.replace(/<[^>]+>/g, '');
-
-  // Decode HTML entities
-  text = decodeHtmlEntities(text);
-
-  // Clean up whitespace
+  text = decodeEntities(text);
   text = text.replace(/[ \t]+/g, ' ');
   text = text.replace(/\n{3,}/g, '\n\n');
-  text = text.trim();
-
-  return text;
+  return text.trim();
 }
 
-function decodeHtmlEntities(text) {
+function decodeEntities(text) {
   return text
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
@@ -310,382 +265,210 @@ function decodeHtmlEntities(text) {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, ' ')
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    .replace(/&#(\d+);/g, function(_, code) { return String.fromCharCode(parseInt(code)); })
+    .replace(/&#x([0-9a-fA-F]+);/g, function(_, hex) { return String.fromCharCode(parseInt(hex, 16)); });
 }
 
 // ═══════════════════════════════════════════════════════════
-// Level 2: you-get 辅助获取（主要用于视频页面信息提取）
+// L2: web_fetch (OpenClaw Agent 内置工具)
+// ═══════════════════════════════════════════════════════════
+// 注意：web_fetch 是 OpenClaw Agent 内置工具，无法在 Node.js 中直接调用。
+// 当作为 CLI 使用时跳过此级别；当作为 Agent 调用时，Agent 应在 L1 失败后
+// 使用 web_fetch 工具获取内容，然后传入 --input 参数跳过 L1。
+//
+// Agent 调用建议流程：
+//   1. node fetch_webpage.js <URL>  (尝试 L1)
+//   2. 如果失败，用 web_fetch 工具获取 markdown，然后通过 --input stdin 传入
 // ═══════════════════════════════════════════════════════════
 
-async function yougetExtract(url) {
-  return new Promise((resolve, reject) => {
-    try {
-      const result = execSync(`you-get -u "${url}" 2>&1`, {
-        encoding: 'utf-8',
-        timeout: CONFIG.timeout,
-      });
-      // you-get -u outputs direct URLs; not useful for text extraction
-      // but we can try you-get --json for structured info
-      resolve(null);
-    } catch {
-      resolve(null);
-    }
-  });
-}
-
 // ═══════════════════════════════════════════════════════════
-// Level 3: 无头浏览器渲染（Puppeteer/Playwright）
+// L3: 无头浏览器（Puppeteer headless only）
+// ⚠️ 绝对禁止打开可见窗口！强制 headless: 'new'
 // ═══════════════════════════════════════════════════════════
 
 async function browserFetch(url, options = {}) {
   const timeout = options.timeout || CONFIG.timeout;
-
-  // Strategy 1: Try Puppeteer
-  try {
-    const result = await puppeteerFetch(url, timeout);
-    if (result && result.content && result.content.length > 0) {
-      result.source = 'browser-puppeteer';
-      return result;
-    }
-  } catch (e) {
-    console.error(`Puppeteer failed: ${e.message}`);
-  }
-
-  // Strategy 2: Try Playwright
-  try {
-    const result = await playwrightFetch(url, timeout);
-    if (result && result.content && result.content.length > 0) {
-      result.source = 'browser-playwright';
-      return result;
-    }
-  } catch (e) {
-    console.error(`Playwright failed: ${e.message}`);
-  }
-
-  // Strategy 3: Use xbrowser CLI (OpenClaw's browser automation)
-  try {
-    const result = await xbrowserFetch(url, timeout);
-    if (result && result.content && result.content.length >= CONFIG.minContentLength) {
-      result.source = 'browser-xbrowser';
-      return result;
-    }
-  } catch (e) {
-    console.error(`xbrowser failed: ${e.message}`);
-  }
-
-  throw new Error('All browser strategies failed for: ' + url);
-}
-
-/**
- * Puppeteer-based fetch
- */
-async function puppeteerFetch(url, timeout) {
   let puppeteer;
+
+  // Try to load puppeteer
   const puppeteerPaths = [
     'puppeteer',
-    path.resolve(__dirname, '..', 'lib', 'node_modules', 'puppeteer'),
     path.resolve(__dirname, '..', 'node_modules', 'puppeteer'),
+    path.resolve(__dirname, '..', 'lib', 'node_modules', 'puppeteer'),
   ];
   for (const p of puppeteerPaths) {
-    try { puppeteer = require(p); console.error(`[puppeteerFetch] Loaded from: ${p}`); break; } catch(e) { console.error(`[puppeteerFetch] Skip ${p}: ${e.message.slice(0,60)}`); }
+    try { puppeteer = require(p); break; } catch {}
   }
-  if (!puppeteer) throw new Error('Puppeteer not installed');
+  if (!puppeteer) {
+    throw new Error('Puppeteer not installed - cannot use headless browser');
+  }
 
+  const execPath = findChromeExecutable();
+
+  // ⚠️ 强制无头模式：headless: 'new' + 防闪窗口参数
   const browser = await puppeteer.launch({
     headless: 'new',
-    executablePath: findChromeExecutable(),
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    executablePath: execPath,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-extensions',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-background-networking',
+      '--disable-sync',
+      '--metrics-recording-only',
+      '--mute-audio',
+      '--no-startup-window',   // 防止启动时闪窗口
+      '--headless=new',         // 确保 headless 模式（double safety）
+    ],
   });
 
   try {
     const page = await browser.newPage();
     await page.setUserAgent(CONFIG.userAgent);
+    await page.setViewport({ width: 1920, height: 1080 });
     await page.goto(url, { waitUntil: 'networkidle2', timeout });
 
-    // Wait for content to load (especially for SPA)
-    await new Promise(r => setTimeout(r, 2000));
+    // Wait for dynamic content
+    await new Promise(function(r) { setTimeout(r, 2000); });
 
-    // Extract content
-    const result = await page.evaluate(() => {
-      const data = { title: '', content: '', author: '', date: '', images: [] };
+    const result = await page.evaluate(function() {
+      var data = { title: '', content: '', author: '', date: '', images: [] };
 
-      // Title
       data.title = document.title || '';
-      const ogTitle = document.querySelector('meta[property="og:title"]');
+      var ogTitle = document.querySelector('meta[property="og:title"]');
       if (ogTitle) data.title = ogTitle.content;
 
-      // Author
-      const authorMeta = document.querySelector('meta[name="author"]')
+      var authorMeta = document.querySelector('meta[name="author"]')
         || document.querySelector('meta[property="article:author"]');
       if (authorMeta) data.author = authorMeta.content;
 
-      // Date
-      const dateMeta = document.querySelector('meta[property="article:published_time"]')
+      var dateMeta = document.querySelector('meta[property="article:published_time"]')
         || document.querySelector('meta[itemprop="datePublished"]');
       if (dateMeta) data.date = dateMeta.content;
 
-      // Content extraction
-      let article = document.querySelector('article');
-      if (!article) {
-        // WeChat specific
-        article = document.querySelector('#js_content');
-      }
-      if (!article) {
-        // Common content selectors
-        const selectors = [
-          '.post-content', '.article-content', '.entry-content',
-          '.content-body', '.markdown-body', '#content', '#article-content',
-          '.rich_media_content', '.topic-richtext',
-        ];
-        for (const sel of selectors) {
-          article = document.querySelector(sel);
-          if (article) break;
-        }
+      // Content selectors (order: most specific first)
+      var selectors = [
+        '#js_content',
+        '.rich_media_content',
+        'article',
+        '.post-content',
+        '.article-content',
+        '.entry-content',
+        '.content-body',
+        '.markdown-body',
+        '#content',
+        '#article-content',
+      ];
+      var article = null;
+      for (var i = 0; i < selectors.length; i++) {
+        article = document.querySelector(selectors[i]);
+        if (article && article.innerText.length > 100) break;
+        article = null;
       }
       if (!article) article = document.body;
 
       // Images
-      article.querySelectorAll('img').forEach(img => {
-        const src = img.dataset.src || img.src;
+      article.querySelectorAll('img').forEach(function(img) {
+        var src = img.dataset.src || img.dataset.original || img.src;
         if (src && src.startsWith('http')) data.images.push(src);
       });
 
-      // Text content
-      data.content = article.innerText || article.textContent || '';
-      data.html = article.innerHTML;
-
+      data.content = (article.innerText || article.textContent || '').trim();
       return data;
     });
 
-    result.title = result.title.trim();
-    result.content = result.content.trim();
+    result.title = (result.title || '').trim();
+    result.content = (result.content || '').trim();
 
     return result;
   } finally {
     await browser.close();
-  }
-}
-
-/**
- * Playwright-based fetch
- */
-async function playwrightFetch(url, timeout) {
-  let chromium;
-  const playwrightPaths = [
-    'playwright',
-    path.resolve(__dirname, '..', 'lib', 'node_modules', 'playwright'),
-    path.resolve(__dirname, '..', 'node_modules', 'playwright'),
-  ];
-  for (const p of playwrightPaths) {
-    try { chromium = require(p).chromium; break; } catch {}
-  }
-  if (!chromium) throw new Error('Playwright not installed');
-
-  const browser = await chromium.launch({
-    headless: true,
-    executablePath: findChromeExecutable(),
-  });
-  try {
-    const page = await browser.newPage();
-    await page.goto(url, { waitUntil: 'networkidle', timeout });
-
-    // Extra wait for dynamic content
-    await new Promise(r => setTimeout(r, 2000));
-
-    const result = await page.evaluate(() => {
-      const data = { title: '', content: '', author: '', date: '', images: [] };
-
-      data.title = document.title || '';
-      const ogTitle = document.querySelector('meta[property="og:title"]');
-      if (ogTitle) data.title = ogTitle.content;
-
-      const authorMeta = document.querySelector('meta[name="author"]')
-        || document.querySelector('meta[property="article:author"]');
-      if (authorMeta) data.author = authorMeta.content;
-
-      const dateMeta = document.querySelector('meta[property="article:published_time"]');
-      if (dateMeta) data.date = dateMeta.content;
-
-      let article = document.querySelector('article')
-        || document.querySelector('#js_content')
-        || document.querySelector('.post-content')
-        || document.querySelector('.article-content')
-        || document.querySelector('.entry-content')
-        || document.querySelector('.rich_media_content')
-        || document.querySelector('.markdown-body')
-        || document.querySelector('#content')
-        || document.body;
-
-      article.querySelectorAll('img').forEach(img => {
-        const src = img.dataset.src || img.src;
-        if (src && src.startsWith('http')) data.images.push(src);
-      });
-
-      data.content = article.innerText || article.textContent || '';
-      data.html = article.innerHTML;
-
-      return data;
-    });
-
-    result.title = result.title.trim();
-    result.content = result.content.trim();
-
-    return result;
-  } finally {
-    await browser.close();
-  }
-}
-
-/**
- * xbrowser CLI-based fetch (OpenClaw's built-in browser automation)
- * Uses xb CLI to navigate and extract page content
- */
-async function xbrowserFetch(url, timeout) {
-  const xbScript = path.resolve(__dirname, '..', '..', 'xbrowser', 'xb.js');
-
-  // Check if xb CLI is available
-  let xbCmd = 'xb';
-  try {
-    execSync('xb version', { encoding: 'utf-8', timeout: 5000 });
-  } catch {
-    // Try direct node execution
-    if (fs.existsSync(xbScript)) {
-      xbCmd = `node "${xbScript}"`;
-    } else {
-      throw new Error('xb CLI not available');
-    }
-  }
-
-  // Use xb to navigate and extract
-  const script = `
-    const page = await browser.newPage();
-    await page.goto('${url}', { waitUntil: 'networkidle2', timeout: ${timeout} });
-    await new Promise(r => setTimeout(r, 3000));
-
-    const result = await page.evaluate(() => {
-      const data = { title: '', content: '', author: '', date: '', images: [] };
-      data.title = document.title || '';
-      let article = document.querySelector('article')
-        || document.querySelector('#js_content')
-        || document.querySelector('.rich_media_content')
-        || document.querySelector('.post-content')
-        || document.querySelector('.article-content')
-        || document.querySelector('.markdown-body')
-        || document.body;
-
-      article.querySelectorAll('img').forEach(img => {
-        const src = img.dataset.src || img.src;
-        if (src && src.startsWith('http')) data.images.push(src);
-      });
-
-      data.content = article.innerText || article.textContent || '';
-      return data;
-    });
-
-    await page.close();
-    return result;
-  `;
-
-  // This is a conceptual implementation; xb CLI may need adaptation
-  // For now, we'll use a simpler approach: xb run with a script
-  const tmpScript = path.join(require('os').tmpdir(), `xb_fetch_${Date.now()}.js`);
-  fs.writeFileSync(tmpScript, script, 'utf-8');
-
-  try {
-    const output = execSync(`${xbCmd} run "${tmpScript}"`, {
-      encoding: 'utf-8',
-      timeout: timeout + 10000,
-    });
-    const result = JSON.parse(output);
-    fs.unlinkSync(tmpScript);
-    return result;
-  } catch (e) {
-    if (fs.existsSync(tmpScript)) fs.unlinkSync(tmpScript);
-    throw e;
   }
 }
 
 // ═══════════════════════════════════════════════════════════
-// MAIN: 三级回退获取
+// MAIN: 四级回退获取
 // ═══════════════════════════════════════════════════════════
 
 async function fetchWebpage(url, options = {}) {
-  const timeout = options.timeout || CONFIG.timeout;
-  const forceBrowser = options.browser || false;
+  var timeout = options.timeout || CONFIG.timeout;
+  var forceBrowser = options.browser || false;
+  var forceLevel = options.level || null;
 
-  const urlType = detectUrlType(url);
-  console.error(`[fetch_webpage] URL type: ${urlType}, needs browser: ${needsBrowser(url)}`);
+  var urlType = detectUrlType(url);
+  console.error('[fetch_webpage] URL type: ' + urlType);
 
-  let lastError = null;
+  var lastError = null;
 
-  // Level 1: HTTP direct fetch (always try first, even for dynamic pages)
-  if (!forceBrowser) {
+  // ── L1: HTTP 直接获取（始终优先） ──
+  if (!forceBrowser && forceLevel !== 'L2' && forceLevel !== 'L3' && forceLevel !== 'L4') {
     try {
-      console.error('[fetch_webpage] Level 1: HTTP direct fetch...');
-      const html = await httpGet(url, { timeout });
-      const extracted = extractFromHtml(html, url);
+      console.error('[fetch_webpage] L1: HTTP direct fetch...');
+      var html = await httpGet(url, { timeout: timeout });
+      var extracted = extractFromHtml(html, url);
 
-      // For generic URLs (not known dynamic sites), accept shorter content
-      const minLen = needsBrowser(url) ? CONFIG.minContentLength : 50;
+      // 微信文章 L1 已验证有效（2940 字符），阈值 100 字符即可
+      var minLen = (urlType === 'wechat') ? 100 : CONFIG.minContentLength;
+
       if (extracted.content.length >= minLen) {
-        console.error(`[fetch_webpage] ✅ Level 1 success: ${extracted.content.length} chars`);
+        console.error('[fetch_webpage] OK L1 success: ' + extracted.content.length + ' chars');
         return {
-          url,
-          ...extracted,
+          url: url,
+          title: extracted.title,
+          content: extracted.content,
+          author: extracted.author,
+          date: extracted.date,
+          images: extracted.images,
+          html: extracted.html,
           source: 'http',
           fetchedAt: new Date().toISOString(),
         };
       }
-
-      console.error(`[fetch_webpage] Level 1 got ${extracted.content.length} chars (too short, likely dynamic page)`);
+      console.error('[fetch_webpage] L1 got ' + extracted.content.length + ' chars (below threshold ' + minLen + ')');
     } catch (e) {
-      console.error(`[fetch_webpage] Level 1 failed: ${e.message}`);
+      console.error('[fetch_webpage] L1 failed: ' + e.message);
       lastError = e;
     }
   }
 
-  // Level 2: you-get (for media pages, limited text extraction)
-  if (!forceBrowser && (urlType === 'bilibili' || urlType === 'youtube' || urlType === 'douyin')) {
+  // ── L2: web_fetch（仅 Agent 上下文可用，CLI 跳过） ──
+  // Agent 应在 L1 失败后自行调用 web_fetch 工具
+  // 然后通过 --input 参数传入已获取的内容
+  if (forceLevel === 'L2') {
+    throw new Error('L2 (web_fetch) must be called by Agent, not CLI. Use web_fetch tool directly.');
+  }
+
+  // ── L3: 无头浏览器（仅 L1 失败时，且 Puppeteer 已安装） ──
+  if (!forceBrowser && forceLevel !== 'L4') {
     try {
-      console.error('[fetch_webpage] Level 2: you-get info extraction...');
-      const info = await yougetExtract(url);
-      if (info) {
+      console.error('[fetch_webpage] L3: Headless browser...');
+      var result = await browserFetch(url, { timeout: timeout });
+      if (result && result.content && result.content.length >= CONFIG.minContentLength) {
+        console.error('[fetch_webpage] OK L3 success: ' + result.content.length + ' chars');
         return {
-          url,
-          title: info.title || '',
-          content: info.description || '',
-          author: info.author || '',
-          date: info.date || '',
-          images: info.thumbnails || [],
-          source: 'you-get',
+          url: url,
+          title: result.title,
+          content: result.content,
+          author: result.author,
+          date: result.date,
+          images: result.images,
+          html: result.html,
+          source: 'browser-headless',
           fetchedAt: new Date().toISOString(),
         };
       }
+      console.error('[fetch_webpage] L3 got ' + (result ? result.content.length : 0) + ' chars (too short)');
     } catch (e) {
-      console.error(`[fetch_webpage] Level 2 failed: ${e.message}`);
+      console.error('[fetch_webpage] L3 failed: ' + e.message);
       lastError = e;
     }
   }
 
-  // Level 3: Browser rendering (for JS-heavy pages like WeChat articles)
-  try {
-    console.error('[fetch_webpage] Level 3: Browser rendering...');
-    const result = await browserFetch(url, { timeout });
-    if (result) {
-      console.error(`[fetch_webpage] ✅ Level 3 success: ${result.content.length} chars`);
-      return {
-        url,
-        ...result,
-        fetchedAt: new Date().toISOString(),
-      };
-    }
-  } catch (e) {
-    console.error(`[fetch_webpage] Level 3 failed: ${e.message}`);
-    lastError = e;
-  }
-
-  throw new Error(`Failed to fetch webpage: ${url}. Last error: ${lastError?.message || 'unknown'}`);
+  throw new Error('Failed to fetch webpage: ' + url + '. Last error: ' + (lastError ? lastError.message : 'unknown'));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -693,84 +476,81 @@ async function fetchWebpage(url, options = {}) {
 // ═══════════════════════════════════════════════════════════
 
 function parseCliArgs(argv) {
-  const args = argv || process.argv.slice(2);
-  const opts = {
-    url: null,
-    output: null,
-    browser: false,
-    timeout: CONFIG.timeout,
-  };
+  var args = argv || process.argv.slice(2);
+  var opts = { url: null, output: null, browser: false, timeout: CONFIG.timeout, level: null };
 
-  for (let i = 0; i < args.length; i++) {
+  for (var i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--output': case '-o': opts.output = args[++i]; break;
       case '--browser': case '-b': opts.browser = true; break;
       case '--timeout': case '-t': opts.timeout = parseInt(args[++i]); break;
+      case '--level': case '-l': opts.level = args[++i]; break;
       case '--help': case '-h':
-        console.log(`
-fetch_webpage.js — 获取任意网页内容（含JS动态渲染页面）
-
-Usage:
-  node fetch_webpage.js <URL> [--output file.json] [--browser] [--timeout 30000]
-
-Options:
-  --output, -o <path>    输出JSON文件路径（默认输出到stdout）
-  --browser, -b          强制使用浏览器渲染
-  --timeout, -t <ms>     超时时间（默认30000ms）
-  --help, -h             显示帮助
-
-三级回退策略:
-  1. HTTP直接获取（最快，适合静态页面）
-  2. you-get提取（适合视频/音频页面）
-  3. 无头浏览器渲染（适合JS动态页面，如微信文章）
-
-支持的URL类型:
-  微信公众号、知乎、B站、抖音、今日头条、简书、CSDN、掘金、
-  微博、Twitter/X、YouTube、Medium、Substack、GitHub等
-`);
+        console.log([
+          'fetch_webpage.js v1.1 - 静默网页内容获取（四级回退）',
+          '',
+          'Usage:',
+          '  node fetch_webpage.js <URL> [--output file.json] [--browser] [--timeout 30000] [--level L1|L2|L3]',
+          '',
+          'Options:',
+          '  --output, -o <path>    输出JSON文件路径（默认stdout）',
+          '  --browser, -b          强制使用无头浏览器（L3）',
+          '  --timeout, -t <ms>     超时时间（默认30000ms）',
+          '  --level, -l <LEVEL>    强制指定级别（L1/L2/L3）',
+          '  --help, -h             显示帮助',
+          '',
+          '回退策略:',
+          '  L1  HTTP直接获取（最快，微信文章已验证有效）',
+          '  L2  web_fetch（Agent内置工具，需Agent上下文调用）',
+          '  L3  无头浏览器（Puppeteer headless:new，禁止可见窗口）',
+          '',
+          'Agent 调用建议:',
+          '  1. node fetch_webpage.js <URL>           (L1 -> L3)',
+          '  2. 失败则用 web_fetch 工具获取 markdown',
+          '  3. 仍失败则用 online-search 搜索摘要',
+          '',
+          '支持的URL类型:',
+          '  微信公众号、知乎、B站、抖音、今日头条、简书、CSDN、掘金、',
+          '  微博、Twitter/X、YouTube、Medium、Substack、GitHub等',
+        ].join('\n'));
         process.exit(0);
       default:
-        if (!opts.url && args[i].startsWith('http')) {
-          opts.url = args[i];
-        }
+        if (!opts.url && args[i].startsWith('http')) opts.url = args[i];
         break;
     }
   }
-
   return opts;
 }
 
 async function main(argv) {
-  const opts = parseCliArgs(argv);
-
+  var opts = parseCliArgs(argv);
   if (!opts.url) {
     console.error('Error: URL is required');
     process.exit(1);
   }
 
-  const result = await fetchWebpage(opts.url, {
+  var result = await fetchWebpage(opts.url, {
     browser: opts.browser,
     timeout: opts.timeout,
+    level: opts.level,
   });
 
-  const json = JSON.stringify(result, null, 2);
-
+  var json = JSON.stringify(result, null, 2);
   if (opts.output) {
     fs.writeFileSync(opts.output, json, 'utf-8');
-    console.error(`Output written to: ${opts.output}`);
-    console.error(`Title: ${result.title}`);
-    console.error(`Content: ${result.content.length} chars`);
-    console.error(`Images: ${result.images.length}`);
-    console.error(`Source: ${result.source}`);
+    console.error('Output: ' + opts.output);
+    console.error('Title: ' + result.title);
+    console.error('Content: ' + result.content.length + ' chars');
+    console.error('Source: ' + result.source);
   } else {
     console.log(json);
   }
 }
 
-module.exports = { fetchWebpage, httpGet, extractFromHtml, detectUrlType, needsBrowser, CONFIG };
+module.exports = { fetchWebpage, httpGet, extractFromHtml, detectUrlType, CONFIG };
 
 if (require.main === module) {
-  main().catch(err => {
+  main().catch(function(err) {
     console.error('Error: ' + err.message);
     process.exit(1);
   });

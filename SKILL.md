@@ -352,6 +352,15 @@ node mix_audio.js `
    - 超过 120 秒 → 太长，观众流失，建议拆分为多集
    - 执行时机：场景拆分时预估总时长，超出范围时调整场景数量或单场景时长
 
+2. **🔴 禁止打开用户桌面浏览器获取网页内容**
+   - 获取网页内容必须使用静默方式，**禁止打开任何用户可见的浏览器窗口**
+   - **允许的方式**（按优先级）：
+     1. `fetch_webpage.js` L1 HTTP 直接获取（微信文章已验证有效，3115 字符）
+     2. `web_fetch` 工具（OpenClaw Agent 内置，Agent 上下文可用）
+     3. `fetch_webpage.js` L3 无头浏览器（Puppeteer `headless:'new'`，仅 L1/L2 失败时）
+   - **禁止的方式**：`xbrowser` / `browser` 工具、任何会弹出可见浏览器窗口的操作
+   - 违反 = 直接拒绝执行
+
 2. **渲染防OOM**：`--workers 1 --quality draft`（12GB内存系统）
 2. **FX防遮挡**：文字密集场景（bullets>4项）自动 skipFx
 3. **禁止 drawtext**：中文必须用 PIL overlay
@@ -379,7 +388,7 @@ html-ppt-to-video/
 │   ├── select_theme.js         # 主题自动选择器
 │   └── map_fx.js              # Canvas FX映射器（20种FX）
 ├── scripts/
-│   ├── fetch_webpage.js        # 网页获取（三级回退）
+│   ├── fetch_webpage.js        # 网页获取 v1.1（四级静默回退，禁止可见浏览器）
 │   ├── parse_input.js          # 输入解析
 │   └── post_production.py      # Python后期（备选）
 └── assets/
@@ -387,6 +396,13 @@ html-ppt-to-video/
 ```
 
 ## 版本
+
+- v0.9.1 (2026-06-06): fetch_webpage.js v1.1 静默获取
+  - ✅ L1 微信文章正则修复（多模式匹配，3115 字符验证通过）
+  - ✅ L3 无头浏览器强制 headless:'new' + --no-startup-window（禁止可见窗口）
+  - ✅ L2 web_fetch 作为 Agent 内置工具回退（CLI 跳过，Agent 上下文可用）
+  - ✅ 移除 xbrowser 浏览器回退（禁止打开用户桌面浏览器）
+  - ✅ SKILL.md 新增技术约束 #2：禁止打开用户桌面浏览器获取网页内容
 
 - v0.6.0 (2026-06-05): 多样性分配 + Canvas FX 扩展 ✅
   - ✅ 新增 `diversity_assigner.js`：核心分配器
