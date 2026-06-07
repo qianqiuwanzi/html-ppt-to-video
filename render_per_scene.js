@@ -95,7 +95,7 @@ if (sourceFile && fs.existsSync(sourceFile)) {
 
 // ========== 多样性分配 (v0.6.0) ==========
 const totalConfigDuration = scenes.reduce((a, s) => a + (s.duration || 0), 0);
-const diversity = assignDiversity(config.scenes, totalConfigDuration);
+const diversity = assignDiversity(config.scenes, totalConfigDuration, { skipFiller: config.skipFiller });
 config.scenes = diversity.scenes;
 console.log(`\n  多样性: ${diversity.stats.mode}模式 (${totalConfigDuration}s)`);
 console.log(`  布局: ${diversity.stats.layouts.used}/${diversity.stats.layouts.target}, 动画: ${diversity.stats.animations.used}/${diversity.stats.animations.target}, FX: ${diversity.stats.fx.used}/${diversity.stats.fx.target}`);

@@ -376,7 +376,8 @@ function adjustDurations(originals, fillers, targetMax) {
 // ═══════════════════════════════════════════════════════════
 // 核心分配器 (v0.9.0)
 // ═══════════════════════════════════════════════════════════
-function assignDiversity(scenes, totalDuration) {
+function assignDiversity(scenes, totalDuration, options) {
+  const skipFiller = options && options.skipFiller;
   _fakeSceneCounter = 0;
   const scenesWorking = scenes.map(s => ({ ...s, data: s.data ? JSON.parse(JSON.stringify(s.data)) : {} }));
   const sceneCount = scenesWorking.length;
@@ -392,7 +393,7 @@ function assignDiversity(scenes, totalDuration) {
   const originals = [...scenesWorking];
   let autoFillCount = 0;
 
-  if (useAll) {
+  if (useAll && !skipFiller) {
     const unusedLayouts = ALL_LAYOUTS.filter(l => !usedLayoutSet.has(l));
     if (unusedLayouts.length > 0) {
       console.log('  [diversity] Auto-filling ' + unusedLayouts.length + ' missing layouts: ' + unusedLayouts.join(', '));
@@ -471,7 +472,7 @@ if (require.main === module) {
 
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   const totalConfigDuration = config.scenes.reduce((a, s) => a + (s.duration || 0), 0);
-  const result = assignDiversity(config.scenes, totalConfigDuration);
+  const result = assignDiversity(config.scenes, totalConfigDuration, { skipFiller: config.skipFiller });
 
   config.scenes = result.scenes;
 
