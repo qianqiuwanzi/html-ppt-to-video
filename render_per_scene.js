@@ -95,8 +95,12 @@ if (sourceFile && fs.existsSync(sourceFile)) {
 
 // ========== 多样性分配 (v0.6.0) ==========
 const totalConfigDuration = scenes.reduce((a, s) => a + (s.duration || 0), 0);
-const diversity = assignDiversity(config.scenes, totalConfigDuration, { skipFiller: config.skipFiller });
+const diversity = assignDiversity(config.scenes, totalConfigDuration, {});
 config.scenes = diversity.scenes;
+
+// [v0.9.5] 将多样性分配结果写回 config.json
+fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+console.log('  [render] 多样性分配结果已写回 config.json');
 console.log(`\n  多样性: ${diversity.stats.mode}模式 (${totalConfigDuration}s)`);
 console.log(`  布局: ${diversity.stats.layouts.used}/${diversity.stats.layouts.target}, 动画: ${diversity.stats.animations.used}/${diversity.stats.animations.target}, FX: ${diversity.stats.fx.used}/${diversity.stats.fx.target}`);
 const total = config.scenes.length;

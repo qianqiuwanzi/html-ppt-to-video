@@ -377,7 +377,7 @@ function adjustDurations(originals, fillers, targetMax) {
 // 核心分配器 (v0.9.0)
 // ═══════════════════════════════════════════════════════════
 function assignDiversity(scenes, totalDuration, options) {
-  const skipFiller = options && options.skipFiller;
+  // [v0.9.5] 移除 skipFiller：>30s 强制使用全部31种布局
   _fakeSceneCounter = 0;
   const scenesWorking = scenes.map(s => ({ ...s, data: s.data ? JSON.parse(JSON.stringify(s.data)) : {} }));
   const sceneCount = scenesWorking.length;
@@ -393,7 +393,7 @@ function assignDiversity(scenes, totalDuration, options) {
   const originals = [...scenesWorking];
   let autoFillCount = 0;
 
-  if (useAll && !skipFiller) {
+  if (useAll) {
     const unusedLayouts = ALL_LAYOUTS.filter(l => !usedLayoutSet.has(l));
     if (unusedLayouts.length > 0) {
       console.log('  [diversity] Auto-filling ' + unusedLayouts.length + ' missing layouts: ' + unusedLayouts.join(', '));
@@ -405,6 +405,20 @@ function assignDiversity(scenes, totalDuration, options) {
       console.log('  [diversity] Scenes after fill: ' + scenesWorking.length);
     } else {
       console.log('  [diversity] All 31 layouts already covered');
+    }
+  } else {
+    // ≤30s 规则：补满一半布局（向上取整）
+    const targetLC = Math.ceil(ALL_LAYOUTS.length / 2);
+    const unusedL = ALL_LAYOUTS.filter(l => !usedLayoutSet.has(l)).slice(0, targetLC - usedLayoutSet.size);
+    if (unusedL.length > 0) {
+      console.log('  [diversity] <=30s: auto-filling ' + unusedL.length + ' layouts to reach ' + targetLC);
+      const fillers = unusedL.map(l => generateFakeScene(l));
+      const adjusted = adjustDurations(originals, fillers, 60);
+      scenesWorking.length = 0;
+      scenesWorking.push(...adjusted.scenes);
+      autoFillCount = adjusted.usedFillers;
+    } else {
+      console.log('  [diversity] <=30s: ' + usedLayoutSet.size + ' layouts (target: ' + targetLC + ')');
     }
   }
 
@@ -472,7 +486,7 @@ if (require.main === module) {
 
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   const totalConfigDuration = config.scenes.reduce((a, s) => a + (s.duration || 0), 0);
-  const result = assignDiversity(config.scenes, totalConfigDuration, { skipFiller: config.skipFiller });
+  const result = assignDiversity(config.scenes, totalConfigDuration, {});
 
   config.scenes = result.scenes;
 
