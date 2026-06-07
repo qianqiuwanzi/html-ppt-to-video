@@ -379,7 +379,7 @@ node mix_audio.js `
    - **允许的方式**（按优先级）：
      1. `fetch_webpage.js` L1 HTTP 直接获取（微信文章已验证有效，3115 字符）
      2. `web_fetch` 工具（OpenClaw Agent 内置，Agent 上下文可用）
-     3. `fetch_webpage.js` L3 无头浏览器（Puppeteer `headless:'new'`，仅 L1/L2 失败时）
+     3. `fetch_webpage.js` L3 无头浏览器（Python Playwright `headless:true`，仅 L1/L2 失败时）
    - **禁止的方式**：`xbrowser` / `browser` 工具、任何会弹出可见浏览器窗口的操作
    - 违反 = 直接拒绝执行
 
@@ -410,7 +410,8 @@ html-ppt-to-video/
 │   ├── select_theme.js         # 主题自动选择器
 │   └── map_fx.js              # Canvas FX映射器（20种FX）
 ├── scripts/
-│   ├── fetch_webpage.js        # 网页获取 v1.1（四级静默回退，禁止可见浏览器）
+│   ├── fetch_webpage.js        # 网页获取 v1.2（四级静默回退，L3=Playwright）
+│   ├── fetch_webpage_browser.py # L3: Playwright 无头浏览器获取
 │   ├── parse_input.js          # 输入解析
 │   └── post_production.py      # Python后期（备选）
 └── assets/
@@ -418,6 +419,13 @@ html-ppt-to-video/
 ```
 
 ## 版本
+
+- v0.9.3 (2026-06-07): Playwright 无头浏览器替代 Puppeteer
+  - ✅ L3 从 Puppeteer（未安装）替换为 Python Playwright（已安装 v1.58.0）
+  - ✅ 新增 `fetch_webpage_browser.py`（独立 Playwright 获取脚本）
+  - ✅ `isDynamicSite` 新增 toutiao（头条纯 JS 渲染）
+  - ✅ 头条文章测试通过（2482 字符，16 张图片）
+  - ✅ fetch_webpage.js v1.2
 
 - v0.9.2 (2026-06-07): BGM Library 集成
   - ✅ mix_audio.js 新增 --bgm-style + --bgm-mood 参数（自动选曲）

@@ -101,7 +101,7 @@ function detectUrlType(url) {
  */
 function isDynamicSite(url) {
   const type = detectUrlType(url);
-  return ['zhihu', 'douyin', 'weibo', 'twitter', 'youtube', 'medium', 'substack'].includes(type);
+  return ['zhihu', 'douyin', 'toutiao', 'weibo', 'twitter', 'youtube', 'medium', 'substack'].includes(type);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -282,112 +282,43 @@ function decodeEntities(text) {
 // ═══════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════
-// L3: 无头浏览器（Puppeteer headless only）
-// ⚠️ 绝对禁止打开可见窗口！强制 headless: 'new'
+// L3: 无头浏览器（Python Playwright headless）
+// ⚠️ 绝对禁止打开可见窗口！强制 headless + --no-startup-window
 // ═══════════════════════════════════════════════════════════
 
 async function browserFetch(url, options = {}) {
   const timeout = options.timeout || CONFIG.timeout;
-  let puppeteer;
+  const timeoutSec = Math.ceil(timeout / 1000);
+  const scriptPath = path.join(__dirname, 'fetch_webpage_browser.py');
 
-  // Try to load puppeteer
-  const puppeteerPaths = [
-    'puppeteer',
-    path.resolve(__dirname, '..', 'node_modules', 'puppeteer'),
-    path.resolve(__dirname, '..', 'lib', 'node_modules', 'puppeteer'),
-  ];
-  for (const p of puppeteerPaths) {
-    try { puppeteer = require(p); break; } catch {}
-  }
-  if (!puppeteer) {
-    throw new Error('Puppeteer not installed - cannot use headless browser');
+  // Check Python script exists
+  if (!fs.existsSync(scriptPath)) {
+    throw new Error('fetch_webpage_browser.py not found at ' + scriptPath);
   }
 
-  const execPath = findChromeExecutable();
+  // Call Python Playwright via child_process
+  const { execSync } = require('child_process');
+  const env = Object.assign({}, process.env, { PYTHONIOENCODING: 'utf-8' });
 
-  // ⚠️ 强制无头模式：headless: 'new' + 防闪窗口参数
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    executablePath: execPath,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-extensions',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--disable-background-networking',
-      '--disable-sync',
-      '--metrics-recording-only',
-      '--mute-audio',
-      '--no-startup-window',   // 防止启动时闪窗口
-      '--headless=new',         // 确保 headless 模式（double safety）
-    ],
-  });
+  const output = execSync(
+    `python "${scriptPath}" "${url}" --timeout ${timeoutSec}`,
+    {
+      encoding: 'utf8',
+      timeout: timeout + 5000, // extra buffer for browser startup
+      env: env,
+      shell: 'cmd.exe',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }
+  );
 
-  try {
-    const page = await browser.newPage();
-    await page.setUserAgent(CONFIG.userAgent);
-    await page.setViewport({ width: 1920, height: 1080 });
-    await page.goto(url, { waitUntil: 'networkidle2', timeout });
-
-    // Wait for dynamic content
-    await new Promise(function(r) { setTimeout(r, 2000); });
-
-    const result = await page.evaluate(function() {
-      var data = { title: '', content: '', author: '', date: '', images: [] };
-
-      data.title = document.title || '';
-      var ogTitle = document.querySelector('meta[property="og:title"]');
-      if (ogTitle) data.title = ogTitle.content;
-
-      var authorMeta = document.querySelector('meta[name="author"]')
-        || document.querySelector('meta[property="article:author"]');
-      if (authorMeta) data.author = authorMeta.content;
-
-      var dateMeta = document.querySelector('meta[property="article:published_time"]')
-        || document.querySelector('meta[itemprop="datePublished"]');
-      if (dateMeta) data.date = dateMeta.content;
-
-      // Content selectors (order: most specific first)
-      var selectors = [
-        '#js_content',
-        '.rich_media_content',
-        'article',
-        '.post-content',
-        '.article-content',
-        '.entry-content',
-        '.content-body',
-        '.markdown-body',
-        '#content',
-        '#article-content',
-      ];
-      var article = null;
-      for (var i = 0; i < selectors.length; i++) {
-        article = document.querySelector(selectors[i]);
-        if (article && article.innerText.length > 100) break;
-        article = null;
-      }
-      if (!article) article = document.body;
-
-      // Images
-      article.querySelectorAll('img').forEach(function(img) {
-        var src = img.dataset.src || img.dataset.original || img.src;
-        if (src && src.startsWith('http')) data.images.push(src);
-      });
-
-      data.content = (article.innerText || article.textContent || '').trim();
-      return data;
-    });
-
-    result.title = (result.title || '').trim();
-    result.content = (result.content || '').trim();
-
-    return result;
-  } finally {
-    await browser.close();
-  }
+  const result = JSON.parse(output.trim());
+  return {
+    title: (result.title || '').trim(),
+    content: (result.content || '').trim(),
+    author: result.author || '',
+    date: result.date || '',
+    images: result.images || [],
+  };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -487,7 +418,7 @@ function parseCliArgs(argv) {
       case '--level': case '-l': opts.level = args[++i]; break;
       case '--help': case '-h':
         console.log([
-          'fetch_webpage.js v1.1 - 静默网页内容获取（四级回退）',
+          'fetch_webpage.js v1.2 - 静默网页内容获取（四级回退）',
           '',
           'Usage:',
           '  node fetch_webpage.js <URL> [--output file.json] [--browser] [--timeout 30000] [--level L1|L2|L3]',
