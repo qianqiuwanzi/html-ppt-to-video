@@ -199,14 +199,34 @@ academic-paper, arctic-cool, aurora, bauhaus, blueprint, catppuccin-latte, catpp
 使用 `mix_audio.js`（Node.js，无 Python 依赖）：
 
 ```powershell
+# 方式1：自动选曲（推荐）
 node mix_audio.js `
   --config config.json `
   --video video-only.mp4 `
-  --bgm bgm.mp3      `# 可选：有BGM则混流，无BGM则纯配音
+  --bgm-style tech-corporate `  # BGM Library 风格
+  --bgm-mood ambient `           # BGM Library 情绪
   --output final.mp4 `
-  --voice zh-CN-YunjianNeural  `# 可选，默认云健
-  --speed 20         `# 可选，默认+20%（语速快20%）
+  --voice zh-CN-YunjianNeural `
+  --speed 20
+
+# 方式2：手动指定 BGM 文件
+node mix_audio.js `
+  --config config.json `
+  --video video-only.mp4 `
+  --bgm bgm.mp3 `               # 手动指定 BGM 文件
+  --output final.mp4
 ```
+
+**BGM Library 集成（自动选曲）**：
+- `--bgm-style`: 风格（默认 `tech-corporate`）
+  - `tech-corporate`: 科技/商务
+  - `social-media`: 自媒体/生活
+  - `startup`: 创业/梦想
+- `--bgm-mood`: 情绪（默认 `ambient`）
+  - `ambient`: 环境感（沉稳、背景）
+  - `upbeat`: 活力感（轻快、激励）
+- 自动从 `bgm-library` 技能目录随机选择对应风格/情绪的 BGM 文件
+- 优先级：`--bgm-style` > `--bgm` > 无 BGM
 
 **流程**：
 1. 从 config.json 提取每场景文本（title/kicker/items/quote 等字段）
@@ -221,7 +241,9 @@ node mix_audio.js `
 - Speed: `+20%`（比默认快 20%，节奏紧凑）
 - 格式: MP3 192kbps
 
-**BGM 要求**：MP3/WAV/AAC 格式，放置在 config.json 同目录或指定 `--bgm` 路径
+**BGM 要求**：
+- 自动选曲：无需准备，技能自动从 `bgm-library` 库中选择
+- 手动指定：MP3/WAV/AAC 格式，放置在 config.json 同目录或指定 `--bgm` 路径
 
 **⚠️ 已知限制**：
 - **全量模式**：TTS 时长按 config.scene.duration 分配，可能与实际渲染视频有偏差（<5s）
@@ -396,6 +418,12 @@ html-ppt-to-video/
 ```
 
 ## 版本
+
+- v0.9.2 (2026-06-07): BGM Library 集成
+  - ✅ mix_audio.js 新增 --bgm-style + --bgm-mood 参数（自动选曲）
+  - ✅ pickBGM() 函数：从 bgm-library 技能目录随机选曲
+  - ✅ SKILL.md 音频后期制作章节更新（自动选曲说明）
+  - ✅ 优先级：--bgm-style > --bgm > 无 BGM
 
 - v0.9.1 (2026-06-06): fetch_webpage.js v1.1 静默获取
   - ✅ L1 微信文章正则修复（多模式匹配，3115 字符验证通过）

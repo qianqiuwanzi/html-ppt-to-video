@@ -5,20 +5,23 @@
  * 功能（模块化）：
  *   1. 从场景配置提取文本，生成 TTS 配音（edge-tts）
  *   2. FFmpeg 拼接所有 TTS 片段
- *   3. FFmpeg 混流 TTS + BGM
+ *   3. FFmpeg 混流 TTS + BGM（支持 --bgm 指定文件 或 --bgm-style/--bgm-mood 自动选曲）
  *   4. FFmpeg 合并视频 + 音频
  *
  * 用法:
- *   node mix_audio.js --config config.json --video video.mp4 --bgm bgm.mp3 --output final.mp4
- *   node mix_audio.js --config config.json --video video.mp4 --output final.mp4  (无BGM)
+ *   node mix_audio.js --config config.json --video video.mp4 [--bgm bgm.mp3] [--bgm-style style --bgm-mood mood] --output final.mp4
+ *
+ * 自动选曲（BGM Library 集成）：
+ *   node mix_audio.js --config config.json --video video.mp4 --bgm-style tech-corporate --bgm-mood ambient --output final.mp4
  *
  * 可导入:
- *   const { extractSceneText, generateTTS, mergeAudioClip } = require('./mix_audio');
+ *   const { extractSceneText, generateTTS, mergeAudioClip, pickBGM } = require('./mix_audio');
  */
 
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 // ========== 工具路径 ==========
 function findExecutable(name) {
@@ -43,6 +46,7 @@ const FFPROBE = findExecutable('ffprobe');
 // ========== 公开 API ==========
 exports.FFMPEG = FFMPEG;
 exports.FFPROBE = FFPROBE;
+exports.pickBGM = pickBGM;
 
 /**
  * 提取场景文本（从 scene 对象）
@@ -107,6 +111,33 @@ function getDuration(file) {
 exports.getDuration = getDuration;
 
 /**
+ * 从 BGM Library 自动选曲
+ * @param {string} style - 风格（tech-corporate|social-media|startup）
+ * @param {string} mood - 情绪（ambient|upbeat）
+ * @returns {string|null} BGM 文件路径，失败返回 null
+ */
+function pickBGM(style = 'tech-corporate', mood = 'ambient') {
+  // BGM Library 路径（Windows: C:\Users\<user>\.qclaw\skills\bgm-library\assets\music-library）
+  const bgmRoot = path.join(os.homedir(), '.qclaw', 'skills', 'bgm-library', 'assets', 'music-library');
+  const dir = path.join(bgmRoot, style, mood);
+
+  if (!fs.existsSync(dir)) {
+    console.warn(`  [WARN] BGM 目录不存在: ${dir}`);
+    return null;
+  }
+
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.mp3'));
+  if (files.length === 0) {
+    console.warn(`  [WARN] BGM 目录为空: ${dir}`);
+    return null;
+  }
+
+  const picked = files[Math.floor(Math.random() * files.length)];
+  console.log(`  ✓ 自动选曲: ${style}/${mood}/${picked}`);
+  return path.join(dir, picked);
+}
+
+/**
  * 生成单个场景的 TTS（返回实际音频文件路径和时长）
  * @param {string} text - 要配音的文本
  * @param {string} ttsFile - 输出 MP3 路径
@@ -128,14 +159,13 @@ function generateTTS(text, ttsFile, voice = 'zh-CN-YunjianNeural', speed = 20) {
 
   try {
     // Fix: 用临时文件传参，避免 Windows 8191 字符限制
-    const os = require('os');
-    const rateArg = speed >= 0 ? `+${speed}%` : `${speed}%`;
     const tmpDir = os.tmpdir();
+    const rateArg = speed >= 0 ? `+${speed}%` : `${speed}%`;
     const tmpTxt = path.join(tmpDir, `tts_${Date.now()}_${Math.random().toString(36).slice(2, 9)}.txt`);
     const tmpPy = path.join(tmpDir, `tts_run_${Date.now()}.py`);
     fs.writeFileSync(tmpTxt, text, 'utf8');
 
-    // 写 Python  wrapper：读文件 → 调 edge_tts
+    // 写 Python wrapper：读文件 → 调 edge_tts
     const pyScript = `# -*- coding: utf-8 -*-
 import sys, asyncio, os
 from edge_tts import Communicate
@@ -231,7 +261,7 @@ exports.mergeAudioClip = mergeAudioClip;
 function concatClips(clipFiles, outputFile) {
   const tmpDir = path.dirname(outputFile);
   const listFile = path.join(tmpDir, '_concat_list.txt');
-  const list = clipFiles.map(f => `file '${f.replace(/\\/g, '/')}'`).join('\n');
+  const list = clipFiles.map(f => `file '${f.replace(/\\/g, "'")}'`).join('\n');
   fs.writeFileSync(listFile, list, 'utf8');
   execSync(`"${FFMPEG}" -y -f concat -safe 0 -i "${listFile}" -c copy "${outputFile}"`, {
     encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
@@ -245,21 +275,39 @@ function mainCLI() {
   const args = process.argv.slice(2);
   let configPath = null, videoPath = null, bgmPath = null, outputPath = null;
   let voice = 'zh-CN-YunjianNeural', speed = 20;
+  let bgmStyle = null, bgmMood = null;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--config') configPath = args[++i];
     else if (args[i] === '--video') videoPath = args[++i];
     else if (args[i] === '--bgm') bgmPath = args[++i];
+    else if (args[i] === '--bgm-style') bgmStyle = args[++i];
+    else if (args[i] === '--bgm-mood') bgmMood = args[++i];
     else if (args[i] === '--output') outputPath = args[++i];
     else if (args[i] === '--voice') voice = args[++i];
     else if (args[i] === '--speed') speed = parseInt(args[++i]);
   }
 
   if (!configPath || !videoPath) {
-    console.log('用法: node mix_audio.js --config config.json --video video.mp4 [--bgm bgm.mp3] --output final.mp4');
+    console.log('用法: node mix_audio.js --config config.json --video video.mp4 [--bgm bgm.mp3 | --bgm-style style --bgm-mood mood] --output final.mp4');
+    console.log('');
+    console.log('BGM Library 自动选曲（推荐）:');
+    console.log('  --bgm-style <style>   风格: tech-corporate | social-media | startup');
+    console.log('  --bgm-mood <mood>     情绪: ambient | upbeat');
+    console.log('');
+    console.log('手动指定 BGM 文件:');
+    console.log('  --bgm <bgm.mp3>       直接指定 BGM 文件路径');
     process.exit(1);
   }
   if (!outputPath) outputPath = videoPath.replace('.mp4', '_with_audio.mp4');
+
+  // 如果指定了 --bgm-style，自动选曲
+  if (bgmStyle) {
+    bgmPath = pickBGM(bgmStyle, bgmMood || 'ambient');
+    if (!bgmPath) {
+      console.warn('[WARN] 自动选曲失败，将不使用 BGM');
+    }
+  }
 
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   const scenes = config.scenes || [];
@@ -268,6 +316,7 @@ function mainCLI() {
 
   console.log(`FFmpeg: ${FFMPEG}`);
   console.log(`Voice: ${voice} | Speed: +${speed}%`);
+  if (bgmPath) console.log(`BGM: ${path.basename(bgmPath)}`);
   console.log('');
 
   // 生成所有 TTS
@@ -291,7 +340,7 @@ function mainCLI() {
   // 拼接 TTS
   console.log('\n=== [2/4] 拼接 TTS ===');
   const concatListFile = path.join(ttsOutputDir, 'concat_list.txt');
-  fs.writeFileSync(concatListFile, ttsFiles.map(t => `file '${t.file.replace(/\\/g, '/')}'`).join('\n'), 'utf8');
+  fs.writeFileSync(concatListFile, ttsFiles.map(t => `file '${t.file.replace(/\\/g, "'")}'`).join('\n'), 'utf8');
   const combinedTts = path.join(ttsOutputDir, 'combined_tts.mp3');
   execSync(`"${FFMPEG}" -y -f concat -safe 0 -i "${concatListFile}" -acodec libmp3lame -b:a 192k "${combinedTts}"`, {
     encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
@@ -307,7 +356,7 @@ function mainCLI() {
       `-map "[aout]" -acodec libmp3lame -b:a 192k -shortest "${finalAudio}"`, {
         encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
       });
-    console.log(`  ✓ BGM 混流完成`);
+    console.log(`  ✓ BGM 混流完成: ${path.basename(bgmPath)}`);
   } else {
     fs.copyFileSync(combinedTts, finalAudio);
     console.log(`  ℹ 无 BGM`);
