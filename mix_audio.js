@@ -235,7 +235,7 @@ function mergeAudioClip(videoFile, ttsFile, outputFile, bgmFile, targetDuration)
     const mixed = ttsFile.replace('.mp3', '_mixed.mp3');
     try {
       execSync(`"${FFMPEG}" -y -i "${audioToMerge}" -i "${bgmFile}" ` +
-        `-filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1.0 0.12[aout]" ` +
+        `-filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1.0 0.30[aout]" ` +
         `-map "[aout]" -acodec libmp3lame -b:a 192k -shortest "${mixed}"`, {
           encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
         });
@@ -245,9 +245,9 @@ function mergeAudioClip(videoFile, ttsFile, outputFile, bgmFile, targetDuration)
     }
   }
 
-  // 合并视频 + 音频
+  // 合并视频 + 音频（音量放大 2.5x）
   execSync(`"${FFMPEG}" -y -i "${videoFile}" -i "${audioToMerge}" ` +
-    `-c:v copy -c:a aac -b:a 192k -shortest "${outputFile}"`, {
+    `-filter_complex "[1:a]volume=2.5[outa]" -map 0:v -map "[outa]" -c:v copy -c:a aac -b:a 192k -shortest "${outputFile}"`, {
       encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
     });
 }
@@ -352,7 +352,7 @@ function mainCLI() {
   const finalAudio = path.join(ttsOutputDir, 'final_audio.mp3');
   if (bgmPath && fs.existsSync(bgmPath)) {
     execSync(`"${FFMPEG}" -y -i "${combinedTts}" -i "${bgmPath}" ` +
-      `-filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1.0 0.12[aout]" ` +
+      `-filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1.0 0.30[aout]" ` +
       `-map "[aout]" -acodec libmp3lame -b:a 192k -shortest "${finalAudio}"`, {
         encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
       });
