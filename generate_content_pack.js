@@ -56,16 +56,39 @@ function generateTags(scenes, title) {
   return Array.from(tagSet).slice(0, 10);
 }
 
-// ========== BGM 选曲建议 ==========
-function generateBGMSuggestion(config) {
-  const style = config.bgmStyle || 'tech-corporate';
-  const mood = config.bgmMood || 'ambient';
-  const suggestions = {
-    'tech-corporate': { name: '科技商务', tracks: ['Digital Horizon', 'Circuit Pulse', 'Binary Flow'], artist: 'Fesliyan Studios' },
-    'social-media': { name: '自媒体生活', tracks: ['Morning Light', 'Happy Vlog', 'Sunrise Vibes'], artist: 'Fesliyan Studios' },
-    'startup': { name: '创业梦想', tracks: ['Rise Up', 'New Beginning', 'Future Vision'], artist: 'Fesliyan Studios' },
+// ========== BGM 选曲建议（实际选曲） ==========
+function pickRealBGM(config) {
+  const bgmStyle = config.bgmStyle || 'tech-corporate';
+  const bgmMood = config.bgmMood || 'ambient';
+
+  const home = process.env.USERPROFILE || process.env.HOME || '';
+  const bgmBase = path.join(home, '.qclaw', 'skills', 'bgm-library', 'assets', 'music-library');
+
+  const styleDirMap = {
+    'tech-corporate': 'tech-corporate',
+    'social-media': 'social-media',
+    'startup': 'startup',
   };
-  return suggestions[style] || suggestions['tech-corporate'];
+  const dir = styleDirMap[bgmStyle] || 'tech-corporate';
+  const targetDir = path.join(bgmBase, dir, bgmMood);
+
+  if (!fs.existsSync(targetDir)) {
+    return { name: bgmStyle, file: '(bgm 目录未找到: ' + targetDir + ')', mood: bgmMood };
+  }
+
+  const files = fs.readdirSync(targetDir).filter(f => f.endsWith('.mp3'));
+  if (files.length === 0) {
+    return { name: bgmStyle, file: '(该风格无 mp3)', mood: bgmMood };
+  }
+
+  const picked = files[Math.floor(Math.random() * files.length)];
+
+  return {
+    name: bgmStyle,
+    file: picked,
+    mood: bgmMood,
+    fullPath: path.join(targetDir, picked),
+  };
 }
 
 // ========== 爆款标题生成 ==========
@@ -104,12 +127,11 @@ function generateContentPack(config) {
   // 1. 原文链接
   const sourceUrl = config.sourceUrl || '（未记录原文链接）';
   
-  // 2. 短视频文案：按场景提取 narration
-  const narrationLines = [];
-  origScenes.forEach((s, i) => {
-    const txt = s.narration || '';
-    if (txt.trim()) narrationLines.push(`**场景${i + 1}** (${s.layout}): ${txt}`);
-  });
+  // 2. 短视频文案：纯口播稿（不含场景编号和 layout）
+  const narrationText = origScenes
+    .map(s => (s.narration || '').trim())
+    .filter(Boolean)
+    .join('\n\n');
   
   // 3. 爆款标题
   const viralTitles = generateViralTitles(config);
@@ -117,8 +139,8 @@ function generateContentPack(config) {
   // 4. 发布标签
   const tags = generateTags(scenes, title);
   
-  // 5. BGM选曲
-  const bgm = generateBGMSuggestion(config);
+  // 5. BGM选曲（实际选曲）
+  const bgm = pickRealBGM(config);
   
   // 6. 发布时间建议
   const schedule = PUBLISH_SCHEDULE;
@@ -138,7 +160,7 @@ ${sourceUrl}
 
 ## 🎬 短视频文案
 
-${narrationLines.join('\n\n')}
+${narrationText || '（未找到 narration 字段，请先运行 generate_narration.js）'}
 
 ---
 
@@ -164,9 +186,11 @@ ${tags.map(t => '#' + t).join(' ')}
 | 项目 | 内容 |
 |------|------|
 | **风格** | ${bgm.name} |
-| **推荐曲目** | ${bgm.tracks.join(' / ')} |
-| **来源** | ${bgm.artist}（免版权，可商用） |
+| **实际曲目** | \`${bgm.file}\` |
+| **情绪** | ${bgm.mood} |
 | **混音参数** | TTS权重 1.0 : BGM权重 0.30，最终音量 2.5x |
+
+> 曲目来源：bgm-library 技能目录（免版权，可商用）
 
 ---
 
