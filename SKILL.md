@@ -489,6 +489,21 @@ html-ppt-to-video/
 
 ## 版本
 
+- v1.1.0 (2026-06-10): 文案生成方案彻底 redesign（自然语言生成）
+  - ✅ 新增 `generate_spoken_script.js`：AI生成整篇口播稿 → 按场景时长拆分 → narration
+    - 旧方案：模板拼接（机械、不口语）
+    - 新方案：整篇自然语言 → 按场景拆分（口语化、连贯）
+    - 有 API Key 时：调用 OpenAI GPT-4o 生成自然对话式口播稿
+    - 无 API Key 时：使用规则引擎生成启发式口播稿
+    - 输出：`{ fullScript, sceneScripts, stats }`
+  - ✅ `render_per_scene.js`：文案生成块改为同步执行
+    - 方案1（优先）：generate_spoken_script.js（AI自然语言生成）
+    - 方案2（fallback）：generate_narration.js（模板拼接）
+    - 方案3（兜底）：使用 config.json 中已有的 narration 字段
+    - 质量报告：输出长句数、互动结尾、口语词、书面语检测
+  - ✅ 质量验证：口播稿含书面语词汇（内容概览/目录等）→ 质量评级 FAIL
+  - ⚠️ 已知限制：启发式生成（无API Key时）质量不如AI生成
+
 - v1.0.0 (2026-06-10): 内容包交付物 + 文案生成器
   - ✅ 新增 `generate_content_pack.js`：自动生成内容包（原文链接/文案/标题/标签/BGM/发布时间）
   - ✅ 新增 `generate_narration.js`：8段式结构文案生成器（provocative/casual/professional 风格）
