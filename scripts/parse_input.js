@@ -818,14 +818,61 @@ async function main(argv) {
   if (!text.trim()) {
     throw new Error('Input is empty');
   }
+  console.error('[parse_input] Input text: ' + text.trim().length + ' chars');
 
   // Parse into scenes
   let scenes;
   if (opts.noAI) {
+    console.error('[parse_input] Mode: heuristic (--no-ai)');
     const blocks = splitIntoBlocks(text);
     scenes = heuristicParse(blocks);
   } else {
-    scenes = await aiParse(text, { model: opts.model });
+    // 【方案A-修复】API Key 可用性检查
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.error('[parse_input] ERROR: OPENAI_API_KEY is not set.');
+      console.error('[parse_input] Cannot use AI mode. Please either:');
+      console.error('  1. Set the environment variable: set OPENAI_API_KEY=your-key');
+      console.error('  2. Or use --no-ai for heuristic mode (no API key needed)');
+      console.error('[parse_input] Falling back to --no-ai (heuristic) mode.');
+      const blocks = splitIntoBlocks(text);
+      scenes = heuristicParse(blocks);
+    } else {
+      console.error('[parse_input] Mode: AI (OPENAI_API_KEY detected)');
+      try {
+        scenes = await aiParse(text, { model: opts.model });
+      } catch (err) {
+        // 【方案A-修复】AI 解析失败时明确报错，不静默降级
+        console.error('[parse_input] AI parse FAILED: ' + err.message);
+        console.error('[parse_input] Falling back to --no-ai (heuristic) mode.');
+        const blocks = splitIntoBlocks(text);
+        scenes = heuristicParse(blocks);
+      }
+    }
+  }
+
+  // 【方案A-修复】场景内容验证：检查是否为空/占位数据
+  {
+    let emptyScenes = 0;
+    let placeholderScenes = 0;
+    const PLACEHOLDER_PATTERNS = /AI Video|31 layouts|Layouts: 31|100%|Full Coverage|v0\.9|Auto-Fill|html-ppt/i;
+    for (const scene of scenes) {
+      const dataStr = JSON.stringify(scene.data || {});
+      if (!dataStr || dataStr === '{}' || dataStr.length < 10) {
+        emptyScenes++;
+      } else if (PLACEHOLDER_PATTERNS.test(dataStr)) {
+        placeholderScenes++;
+      }
+    }
+    if (emptyScenes > 0 || placeholderScenes > 0) {
+      console.error('[parse_input] WARNING: Config validation found issues:');
+      if (emptyScenes > 0) console.error('  - ' + emptyScenes + ' scene(s) have empty data fields');
+      if (placeholderScenes > 0) console.error('  - ' + placeholderScenes + ' scene(s) contain placeholder/demo data');
+      console.error('[parse_input] This may result in meaningless filler content in the video.');
+      console.error('[parse_input] Tip: Ensure OPENAI_API_KEY is set for AI-powered content extraction.');
+    } else {
+      console.error('[parse_input] Config validation: OK (' + scenes.length + ' scenes with real content)');
+    }
   }
 
   // Select theme

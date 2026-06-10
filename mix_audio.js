@@ -52,6 +52,11 @@ exports.pickBGM = pickBGM;
  * 提取场景文本（从 scene 对象）
  */
 function extractSceneText(scene) {
+  // 【L1修复】优先读取 narration（口播文案），没有则回退到 data 字段拼接
+  if (scene.narration && scene.narration.trim()) {
+    return scene.narration.trim();
+  }
+
   const data = scene.data || {};
   const parts = [];
 

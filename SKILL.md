@@ -12,15 +12,21 @@ description: Convert any content (webpage, text, document) to short video using 
 ```
 输入内容（URL/网页/文本/文档）
     ↓
-[网页获取层] scripts/fetch_webpage.js  ← 新增：三级回退（HTTP→you-get→无头浏览器）
+[网页获取层] scripts/fetch_webpage.js  ← 四级回退（HTTP→you-get→无头浏览器）
     ↓
 [文本解析层] scripts/parse_input.js
+│   ├─ OPENAI_API_KEY 检查（入口处提前判断，无 Key 则明确提示）
+│   ├─ AI 解析失败时明确报错 + 自动回退 heuristic 模式
+│   └─ 场景内容验证（空数据/占位数据警告）
+    ↓
+[配置验证层] render_per_scene.js  ← 新增（v0.10.0）
+│   └─ 检查 config.json 场景数据完整性，>30% 占位数据则停止并报错
     ↓
 [脚本生成层] AI提炼要点 → scene config JSON
     ↓
-[多样性分配层] diversity_assigner.js ← v0.6.0 新增
-    ├─ >30s: 全部 31布局 + 27动画 + 20FX 均匀分配
-    └─ ≤30s: 一半（向上取整）均匀分配
+[多样性分配层] diversity_assigner.js ← v0.10.0 修复
+│   ├─ 填充场景内容从真实场景提取（不再是 Demo 假数据）
+│   └─ >30s: 全部 31布局 + 27动画 + 20FX 均匀分配
     ↓
 [视觉转换层] converters/
     ├─ convert_theme.js     — html-ppt 36主题 → hyperframes :root CSS
@@ -36,6 +42,34 @@ description: Convert any content (webpage, text, document) to short video using 
 ```
 
 ## 使用方式
+
+### ⚠️ 配置验证（必须步骤）
+
+生成 `config.json` 后，**必须先检查场景内容完整性**，再进入渲染环节。
+
+**手动检查**（不运行任何脚本，直接查看 config.json）：
+
+```json
+"data": {
+  "title": "真实标题",        // ← 有实际内容？
+  "kicker": "AI · 洞察",
+  "items": ["第一点", "第二点"],  // ← 有真实列表项？
+  ...
+}
+```
+
+**危险信号**（出现任意一项，说明配置有问题）：
+- `data` 字段为空 `{}`
+- 大量 `"Layouts: 31"`、`"100%"`、`"AI Video Pipeline"`、`"v0.9"` 等 Demo 占位文本
+- 场景 `text` 字段为空（导致配音内容为空）
+
+**自动验证**：运行 `node render_per_scene.js --config config.json` 时，脚本会自动检查：
+- >30% 场景为占位数据 → **直接停止，报错退出**（不再生成无意义视频）
+- 部分场景有问题 → **打印警告**，但继续执行
+- 全部正常 → 打印 `✓ PASSED`
+
+**根因**：配置有问题的根本原因是 `OPENAI_API_KEY` 未设置，导致 `parse_input.js` 的 AI 解析失败，生成了空配置。
+- 修复：设置 `OPENAI_API_KEY` 环境变量后重新运行 `node parse_input.js --url <URL>`
 
 ### 方式1：全量渲染（快速，推荐简单场景）
 
@@ -193,6 +227,39 @@ academic-paper, arctic-cool, aurora, bauhaus, blueprint, catppuccin-latte, catpp
 - 动画分配跳过 `parallax-tilt`（hover 效果，视频不适用）
 
 **⚠️ 注意**：config.json 中的 `layout`、`data.animation`、`fx` 字段会被 diversity_assigner **全部覆盖**。如需固定某个场景的布局/动画/FX，请在分配后手动修改生成的 config。
+
+## 📦 交付物：内容包（v1.0.0）
+
+**每次生成视频后，自动生成内容包文件 `content_pack.md`**，包含以下6个模块：
+
+| 模块 | 说明 | 数据来源 |
+|------|------|----------|
+| 📄 **原文链接** | 创作素材的原始来源 URL | config.json `sourceUrl` 字段 |
+| 🎬 **短视频文案** | 逐场景口播文案（narration 字段） | config.json scenes[].narration |
+| 🔥 **爆款标题** | 2个高点击标题（反差/数字/疑问/冲突/结果型） | 自动生成（基于标题模板库） |
+| 🏷️ **发布标签** | 10个以内精选标签 | 场景 tags + 标题关键词 |
+| 🎵 **BGM选曲** | 推荐曲目 + 混音参数 | config.json bgmStyle/bgmMood |
+| ⏰ **发布时间建议** | 最佳日期/时段 + 避坑指南 | 抖音发布最佳实践规则 |
+
+### 生成方式
+
+**自动生成**：`render_per_scene.js` 完成后自动调用 `generate_content_pack.js`
+
+**手动调用**：
+```powershell
+node generate_content_pack.js --config config.json [--output content_pack.md]
+```
+
+### 输出格式
+
+生成结构化 Markdown 文件，可直接复制到飞书/Notion/语雀，或导出 PDF 交付客户。
+
+### 前置要求
+
+- config.json 中须包含 `sourceUrl` 字段（原文链接）
+- 每个场景须包含 `narration` 字段（口播文案）
+
+---
 
 ## 音频后期制作（mix_audio.js）
 
@@ -400,6 +467,8 @@ html-ppt-to-video/
 ├── SKILL.md                    # 本文件
 ├── diversity_assigner.js       # 多样性分配器（v0.6.0）
 ├── render_per_scene.js          # Per-Scene 独立渲染编排脚本
+├── generate_narration.js        # 文案生成器（8段式结构+长句检查+互动结尾）
+├── generate_content_pack.js     # 内容包生成器（交付物输出）
 ├── mix_audio.js                # 音频后期（TTS+BGM+混流）
 ├── canvas-fx.js               # 20种Canvas FX实现
 ├── converters/
@@ -419,6 +488,22 @@ html-ppt-to-video/
 ```
 
 ## 版本
+
+- v1.0.0 (2026-06-10): 内容包交付物 + 文案生成器
+  - ✅ 新增 `generate_content_pack.js`：自动生成内容包（原文链接/文案/标题/标签/BGM/发布时间）
+  - ✅ 新增 `generate_narration.js`：8段式结构文案生成器（provocative/casual/professional 风格）
+  - ✅ `mix_audio.js`：extractSceneText 优先读取 narration 字段
+  - ✅ SKILL.md 新增「交付物：内容包」章节
+
+- v0.9.5 (2026-06-07): 彻底移除 skipFiller，修复多样性分配规则
+- v0.9.6 (2026-06-07): 视频音量 + BGM音量放大2.5x
+  - BGM权重: 0.12 → 0.30 (2.5x)
+  - 最终输出音量: 新增 volume=2.5 放大
+  - ✅ 移除 skipFiller 参数（违反技能规则：>30s 必须使用全部31布局）
+  - ✅ >30s 强制补满 31 种布局（ignore skipFiller）
+  - ✅ ≤30s 补一半（向上取整）布局
+  - ✅ render_per_scene.js 分配结果写回 config.json
+  - ✅ diversity_assigner.js + render_per_scene.js 语法检查通过
 
 - v0.9.3 (2026-06-07): Playwright 无头浏览器替代 Puppeteer
   - ✅ L3 从 Puppeteer（未安装）替换为 Python Playwright（已安装 v1.58.0）

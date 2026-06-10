@@ -64,6 +64,38 @@ if (!configPath) {
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 const scenes = config.scenes || [];
 
+// ========== 【方案C-修复】配置验证：检查场景内容完整性 ==========
+(function validateConfig() {
+  const PLACEHOLDER_PATTERNS = /AI Video|31 layouts|Layouts: 31|100%|Full Coverage|v0\.9|Auto-Fill|html-ppt|3d|Done in 3m/i;
+  let emptyCount = 0, placeholderCount = 0, goodCount = 0;
+  for (const scene of scenes) {
+    const d = scene.data || {};
+    const str = JSON.stringify(d);
+    if (!str || str === '{}' || str.length < 10) {
+      emptyCount++;
+    } else if (PLACEHOLDER_PATTERNS.test(str)) {
+      placeholderCount++;
+    } else {
+      goodCount++;
+    }
+  }
+  console.log('[render] Config validation: ' + scenes.length + ' scenes total');
+  console.log('[render]   ✓ Real content: ' + goodCount + '  |  ⚠ Empty: ' + emptyCount + '  |  ⚠ Placeholder: ' + placeholderCount);
+  if (placeholderCount > scenes.length * 0.3) {
+    console.error('[render] ERROR: >30% scenes contain DEMO PLACEHOLDER data.');
+    console.error('[render] The video will contain meaningless filler content (Layouts/FX charts etc).');
+    console.error('[render] Root cause: parse_input.js likely failed to extract real article content.');
+    console.error('[render] Fix: Check that OPENAI_API_KEY is set, or use --no-ai with real content.');
+    console.error('[render] Stopping. Delete config.json and re-run parse_input.js with a valid API key.');
+    process.exit(1);
+  } else if (placeholderCount > 0 || emptyCount > 0) {
+    console.warn('[render] WARNING: Some scenes have placeholder/empty data.');
+    console.warn('[render] Fix: Set OPENAI_API_KEY env var for AI-powered content extraction.');
+  } else {
+    console.log('[render] Config validation PASSED: all scenes have real content.');
+  }
+})();
+
 // ========== [新增1] 口播文案生成 (v0.6.0) ==========
 if (sourceFile && fs.existsSync(sourceFile)) {
   console.log('[0/5] 生成口播文案...');
@@ -295,31 +327,26 @@ try {
   const finalSize = (fs.statSync(finalOutput).size / 1024 / 1024).toFixed(2);
   const finalDur = getDuration(finalOutput);
 
-  // ========== [新增4] 输出内容包 ==========
+  // ========== [v1.0.0] 输出内容包 ==========
   console.log('');
   console.log('  输出内容包...');
-  const pack = {
-    source: {
-      url: config.sourceUrl || '',
-      title: config.title || '',
-    },
-    scripts: config.scenes.map((s, i) => ({
-      scene: i + 1,
-      script: (s.data && s.data.script) || '',
-      subtitle: (s.data && s.data.subtitle) || '',
-    })),
-    titles: [
-      config.title || '',
-      (config.scenes[0] && config.scenes[0].data && config.scenes[0].data.title) || '',
-    ],
-    tags: (config.scenes[0] && config.scenes[0].data && config.scenes[0].data.tags) || ['#短视频', '#AI赋能', '#干货分享'],
-    cover: coverFile,
-    video: finalOutput,
-  };
-
-  const packFile = path.join(outputDir, 'content_pack.json');
-  fs.writeFileSync(packFile, JSON.stringify(pack, null, 2), 'utf8');
-  console.log(`  ✓ 内容包已输出: ${packFile}`);
+  
+  const packScript = path.join(__dirname, 'generate_content_pack.js');
+  if (fs.existsSync(packScript)) {
+    try {
+      const packOutput = path.join(outputDir, 'content_pack.md');
+      execSync(`node "${packScript}" --config "${path.resolve(configPath)}" --output "${packOutput}"`, {
+        stdio: 'pipe',
+        encoding: 'utf8',
+        timeout: 10000
+      });
+      console.log(`  ✓ 内容包已输出: ${packOutput}`);
+    } catch (e) {
+      console.warn(`  ⚠ 内容包生成失败: ${e.message.split('\n').slice(-2)[0]}`);
+    }
+  } else {
+    console.warn(`  ⚠ generate_content_pack.js 未找到，跳过内容包生成`);
+  }
 
   console.log('');
   console.log('╔══════════════════════════════════════════════╗');
@@ -328,7 +355,7 @@ try {
   console.log(`║  大小: ${finalSize} MB`);
   console.log(`║  时长: ${finalDur.toFixed(1)}s`);
   console.log(`║  封面: ${coverFile}`);
-  console.log(`║  内容包: ${packFile}`);
+  console.log(`║  内容包: ${path.join(outputDir, 'content_pack.md')}`);
   console.log('╚══════════════════════════════════════════════╝');
 } catch (err) {
   console.error(`\n❌ 拼接失败: ${err.message.split('\n').slice(-1)[0]}`);
