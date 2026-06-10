@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * generate_spoken_script.js — v1.1.0
+ * generate_spoken_script.js — v1.2.0
  * 
  * 彻底重新设计文案生成方案：
  * 从"模板拼接"改为"自然语言生成"。
@@ -9,54 +9,79 @@
  *   旧方案：scenes → 模板拼接 narration → 输出（机械、不口语）
  *   新方案：scenes → AI生成整篇口播稿 → 按场景时长拆分 → 输出（自然、流畅）
  * 
+ * v1.2.0 改进：
+ *   方案A：用原始场景（非 _isAutoFilled）生成口播稿 → 按比例拆分为全部场景
+ *   LLM：通过 QClaw 本地网关（127.0.0.1:57632/v1/chat/completions），零成本
+ * 
  * 使用方式：
  *   node generate_spoken_script.js --config config.json [--output script.json]
- * 
- * 输出：
- *   {
- *     "fullScript": "整篇口播稿（自然对话式）",
- *     "sceneScripts": ["场景1口播", "场景2口播", ...],
- *     "stats": { "totalChars": N, "longSentences": N, "hasInteraction": true }
- *   }
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
+const http = require('http');
 
 // ============ CLI ============
-const argv = require('minimist')(process.argv.slice(2));
+var argv={};for(var i=2;i<process.argv.length;i++){if(process.argv[i]==='--config')argv.config=process.argv[++i];else if(process.argv[i]==='--output')argv.output=process.argv[++i];}
 const configPath = argv.config || 'config.json';
 const outputPath = argv.output || null;
-const openaiApiKey = process.env.OPENAI_API_KEY || '';
+
+// ============ QClaw 网关配置 ============
+function getQClawGateway() {
+  try {
+    const cfgPath = path.join(process.env.USERPROFILE || '~', '.qclaw', 'openclaw.json');
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    const port = cfg.gateway?.port || 57632;
+    const token = cfg.gateway?.auth?.token || '';
+    return { baseUrl: `http://127.0.0.1:${port}/v1`, token, model: 'openclaw' };
+  } catch (e) {
+    return null;
+  }
+}
 
 // ============ 核心函数 ============
 
-/**
- * 主函数：生成整篇口播稿
- */
 async function main() {
-  console.log('🎙️  口播稿生成器 v1.1.0（自然语言生成模式）\n');
+  console.log('🎙️  口播稿生成器 v1.2.0（自然语言生成 + 方案A）\n');
 
   // 1. 加载配置
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-  const scenes = config.scenes || [];
+  const allScenes = config.scenes || [];
 
-  // 2. 准备素材上下文（所有场景的结构化数据）
-  const context = buildContext(config, scenes);
+  // 2. 方案A：检测原始场景（ID 不以 "auto-" 开头，且非 _isAutoFilled）
+  const isAuto = (s) => (s.data && s.data._isAutoFilled) || (s.id && s.id.startsWith('auto-'));
+  const originalScenes = allScenes.filter(s => !isAuto(s));
+  const autoFilledScenes = allScenes.filter(s => isAuto(s));
+  const useOriginalOnly = originalScenes.length > 0 && originalScenes.length < allScenes.length;
 
-  // 3. 调用 AI 生成整篇口播稿
-  const fullScript = await generateFullScript(context, openaiApiKey);
+  const genScenes = useOriginalOnly ? originalScenes : allScenes;
+  console.log(`  场景分析: 原始${originalScenes.length}个 + 自动填充${autoFilledScenes.length}个 = 总计${allScenes.length}个`);
+  if (useOriginalOnly) console.log(`  方案A: 用${originalScenes.length}个原始场景生成口播稿 → 按比例拆分到${allScenes.length}个场景\n`);
 
-  // 4. 按场景时长拆分口播稿
-  const sceneScripts = splitByScenes(fullScript, scenes);
+  // 3. 准备素材上下文
+  const context = buildContext(config, genScenes);
 
-  // 5. 统计验证
+  // 4. 获取 QClaw 网关配置
+  const gateway = getQClawGateway();
+  let fullScript;
+
+  if (gateway && gateway.token) {
+    console.log(`  🚀 使用 QClaw 本地网关 (${gateway.model}@${gateway.baseUrl})`);
+    fullScript = await callQClawGateway(context, gateway);
+  } else {
+    console.log('  ⚠️  未找到 QClaw 网关配置，使用规则引擎生成');
+    fullScript = generateHeuristicScript(context);
+  }
+
+  // 5. 按场景时长拆分口播稿（方案A：用原始场景的比例拆分到全部场景）
+  const sceneScripts = splitByScenes(fullScript, genScenes, allScenes);
+
+  // 6. 统计验证
   const stats = validateScript(fullScript, sceneScripts);
 
-  // 6. 输出
+  // 7. 输出
   const result = { fullScript, sceneScripts, stats, generatedAt: new Date().toISOString() };
 
   if (outputPath) {
@@ -64,28 +89,17 @@ async function main() {
     console.log(`\n✅ 口播稿已保存: ${outputPath}`);
   }
 
-  // 7. 打印摘要
-  printSummary(result, scenes);
-
+  printSummary(result, allScenes);
   return result;
 }
 
-/**
- * 构建 AI 所需的素材上下文
- */
 function buildContext(config, scenes) {
-  const title = config.title || '未命名';
-  const theme = config.theme || 'tokyo-night';
-
-  // 提取所有场景的关键信息（供 AI 参考）
+  const title = config.title || '';
   const sceneSummaries = scenes.map((s, i) => {
     const layout = s.layout || 'unknown';
     const duration = s.duration || 5;
     const data = s.data || {};
-
-    // 提取该场景的关键文本内容
     const texts = extractSceneTexts(data, layout);
-
     return {
       index: i + 1,
       id: s.id || `s${i + 1}`,
@@ -97,7 +111,7 @@ function buildContext(config, scenes) {
 
   return {
     title,
-    theme,
+    theme: config.theme || 'cyberpunk-neon',
     totalScenes: scenes.length,
     totalDuration: scenes.reduce((sum, s) => sum + (s.duration || 5), 0),
     sourceUrl: config.sourceUrl || '',
@@ -105,31 +119,19 @@ function buildContext(config, scenes) {
   };
 }
 
-/**
- * 从场景 data 字段提取所有文本内容
- */
 function extractSceneTexts(data, layout) {
-  const texts = [];
-
+  var texts = [];
   function add(val) {
     if (typeof val === 'string' && val.trim()) texts.push(val.trim());
     if (typeof val === 'number') texts.push(String(val));
   }
-
-  // 通用字段
   ['title', 'kicker', 'subtitle', 'quote', 'text', 'big', 'value', 'label', 'desc', 'sub'].forEach(k => add(data[k]));
-
-  // 列表字段
   ['items', 'pros', 'cons', 'steps', 'commands'].forEach(k => {
     if (Array.isArray(data[k])) data[k].forEach(it => {
       if (typeof it === 'string') add(it);
-      if (typeof it === 'object') {
-        add(it.title); add(it.label); add(it.desc); add(it.text);
-      }
+      if (typeof it === 'object') { add(it.title); add(it.label); add(it.desc); add(it.text); }
     });
   });
-
-  // 双栏/三栏
   ['left', 'right', 'cols'].forEach(k => {
     if (data[k]) {
       if (Array.isArray(data[k])) {
@@ -145,84 +147,79 @@ function extractSceneTexts(data, layout) {
       }
     }
   });
-
-  // KPI网格
   if (Array.isArray(data.kpis)) data.kpis.forEach(k => { add(k.label); add(k.value); });
-
-  // 标签
   if (Array.isArray(data.tags)) data.tags.forEach(add);
 
-  // 去重
+  var badWords = ['内容概览', '目录', '数据说话', '来看几个关键点', '本文研究', '本报告指出', '结论', '摘要'];
+  texts = texts.filter(function(t) {
+    return !badWords.some(function(b) { return t.includes(b); });
+  });
   return [...new Set(texts)].slice(0, 20);
 }
 
 /**
- * 调用 OpenAI API 生成整篇口播稿
+ * 调用 QClaw 本地网关（OpenAI 兼容）
  */
-function generateFullScript(context, apiKey) {
+function callQClawGateway(context, gateway) {
   return new Promise((resolve, reject) => {
-    if (!apiKey) {
-      // 无 API Key：使用启发式生成（规则引擎）
-      console.log('⚠️  未设置 OPENAI_API_KEY，使用规则引擎生成');
-      resolve(generateHeuristicScript(context));
-      return;
-    }
-
     const prompt = buildPrompt(context);
 
     const body = JSON.stringify({
-      model: 'gpt-4o',
+      model: gateway.model,
       messages: [
         {
           role: 'system',
-          content: `你是大卫自媒体频道的专业文案策划。
-擅长撰写短视频口播稿，语言风格自然、口语化，像真人主播在说话。
-禁止书面语、禁止文章摘要式表达、禁止说明书语气。
-每句话都要让人感觉是"真人在说"，不是"AI在念稿"。`
+          content: '你是大卫自媒体频道的专业文案策划。擅长撰写短视频口播稿，语言风格自然、口语化，像真人主播在说话。禁止书面语、禁止文章摘要式表达、禁止说明书语气。每句话都要让人感觉是"真人在说"，不是"AI在念稿"。'
         },
-        {
-          role: 'user',
-          content: prompt
-        }
+        { role: 'user', content: prompt }
       ],
       max_tokens: 4000,
       temperature: 0.8,
     });
 
+    const url = new URL(gateway.baseUrl + '/chat/completions');
     const options = {
-      hostname: 'api.openai.com',
-      path: '/v1/chat/completions',
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      }
+        'Authorization': `Bearer ${gateway.token}`,
+      },
+      timeout: 60000,
     };
 
-    const req = https.request(options, (res) => {
+    const req = http.request(options, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
           if (json.error) throw new Error(json.error.message);
+          if (!json.choices || json.choices.length === 0) throw new Error('AI 返回为空');
           const script = json.choices[0].message.content.trim();
+          console.log(`  ✅ AI 生成完成 (${script.length} 字符)`);
           resolve(script);
         } catch (e) {
-          reject(new Error(`OpenAI API 错误: ${e.message}`));
+          console.warn(`  ⚠️  AI 调用失败: ${e.message}`);
+          console.warn('  → 回退到规则引擎生成');
+          resolve(generateHeuristicScript(context));
         }
       });
     });
 
-    req.on('error', reject);
+    req.on('error', (e) => {
+      console.warn(`  ⚠️  网关连接失败: ${e.message}`);
+      console.warn('  → 回退到规则引擎生成');
+      resolve(generateHeuristicScript(context));
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('请求超时')); });
     req.write(body);
     req.end();
   });
 }
 
-/**
- * 构建 AI prompt
- */
 function buildPrompt(context) {
   const totalDuration = Math.round(context.totalDuration);
   const sceneList = context.sceneSummaries
@@ -234,7 +231,7 @@ function buildPrompt(context) {
 为一篇自媒体视频撰写整篇口播稿。
 
 ## 视频信息
-- 标题：${context.title}
+- 标题：${context.title || '(无标题)'}
 - 总时长：约${totalDuration}秒
 - 场景数量：${context.totalScenes}个
 - 原文链接：${context.sourceUrl || '无'}
@@ -283,36 +280,26 @@ ${sceneList}
 }
 
 /**
- * 启发式生成（无 API Key 时使用）
+ * 启发式生成（无 API 时使用）
  */
 function generateHeuristicScript(context) {
   const scenes = context.sceneSummaries;
-  const title = context.title;
-
-  // 收集所有文本
-  const allTexts = scenes.map(s => s.content).filter(t => t !== '(视觉场景，无文字)');
-
-  // 生成钩子（从第一个场景提取）
   const hookTemplates = [
-    `你有没有想过，${title}到底是怎么回事？`,
-    `今天聊个很多人都在问的话题——${title}。`,
-    `说个可能会刷新你认知的事：${title}。`,
+    '你有没有想过，用什么AI其实暴露了你的阶层？',
+    '今天说个扎心的真相：用AI的人，有钱人比普通人多得多。',
+    '你知道吗，AI这东西，用的人有钱没钱，差太多了。',
   ];
 
-  // 生成各场景的叙述
   const sceneTexts = scenes.map((s, i) => {
-    // 如果场景有内容，用内容生成叙述
     if (s.content && s.content !== '(视觉场景，无文字)') {
-      return generateSceneNarrative(s, allTexts, i, scenes.length);
+      return generateSceneNarrative(s, i, scenes.length);
     }
     return null;
   }).filter(Boolean);
 
-  // 组装整篇口播稿
   const hook = hookTemplates[Math.floor(Math.random() * hookTemplates.length)];
   const body = sceneTexts.join('\n\n');
 
-  // 互动结尾
   const interactionTemplates = [
     '你更看重Claude还是ChatGPT？评论区告诉我 👇',
     '你用的是哪款AI？评论区聊聊 👀',
@@ -320,17 +307,15 @@ function generateHeuristicScript(context) {
   ];
   const interaction = interactionTemplates[Math.floor(Math.random() * interactionTemplates.length)];
 
-  return `${hook}\n\n${body}\n\n${interaction}`;
+  var bodyLast = body.split(/\n+/).filter(Boolean).slice(-1)[0] || '';
+  if (/评论区|关注我|告诉我/.test(bodyLast)) return hook + '\n\n' + body;
+  return hook + '\n\n' + body + '\n\n' + interaction;
 }
 
-/**
- * 为单个场景生成叙述（启发式）
- */
-function generateSceneNarrative(scene, allTexts, index, total) {
+function generateSceneNarrative(scene, index, total) {
   const texts = scene.content.split('|').map(t => t.trim()).filter(Boolean);
   const layout = scene.layout;
 
-  // TOC 场景：生成自然引导语
   if (layout === 'toc') {
     const transitions = [
       '先给大家列个提纲，今天要讲这几件事。',
@@ -341,96 +326,119 @@ function generateSceneNarrative(scene, allTexts, index, total) {
       texts.slice(0, 4).map(t => `第一，${t}。`).join(' ');
   }
 
-  // 数据场景：自然引入
   if (layout === 'stat-highlight' || layout === 'fullscreen-stat') {
     const num = texts.find(t => /\d/.test(t)) || '';
     const label = texts.find(t => !/\d/.test(t)) || '';
     return num ? `你看这个数据，${num}，${label}。` : `说个关键数据：${texts[0]}。`;
   }
 
-  // 引用场景
   if (layout === 'big-quote') {
     const quote = texts[0] || '';
     return `"${quote}"，这句话说得挺有道理的。`;
   }
 
-  // CTA 场景
   if (layout === 'cta') {
     return texts[0] ? `最后，关注我，带你了解更多。${texts[0]}` : '好了，今天就到这里，关注我，带你了解更多。';
   }
 
-  // 其他场景：直接用内容
   const mainText = texts[0] || '';
   if (!mainText) return null;
-
-  // 避免重复内容
-  if (allTexts.length > 1) {
-    const prevTexts = allTexts.slice(0, index);
-    if (prevTexts.some(p => p.includes(mainText) || mainText.includes(p))) {
-      return null; // 跳过重复内容
-    }
-  }
-
   return mainText;
 }
 
 /**
- * 按场景时长拆分整篇口播稿
- * 策略：找到场景断点（空行/句号作为自然断点）
+ * splitByScenes — 方案A 版本
+ * 用原始场景（genScenes）的比例，拆分内容到全部场景（allScenes）
  */
-function splitByScenes(fullScript, scenes) {
-  const totalDuration = scenes.reduce((sum, s) => sum + (s.duration || 5), 0);
+function splitByScenes(fullScript, genScenes, allScenes) {
+  // 用标点分割成句子
+  const rawParts = fullScript.split(/([。！？\n])/).map(s => s.trim());
+  const sentences = [];
+  let buf = '';
+  for (const p of rawParts) {
+    if (p === '。' || p === '！' || p === '？') {
+      buf += p;
+      if (buf.trim()) sentences.push(buf.trim());
+      buf = '';
+    } else if (p === '\n' || p === '') {
+      if (buf.trim()) { sentences.push(buf.trim()); buf = ''; }
+    } else {
+      buf += p;
+    }
+  }
+  if (buf.trim()) sentences.push(buf.trim());
+
+  if (sentences.length === 0) {
+    return allScenes.map(() => '');
+  }
+
+  // 计算原始场景的总时长和比例
+  const genTotal = genScenes.reduce((s, sc) => s + (sc.duration || 5), 0);
+  const allTotal = allScenes.reduce((s, sc) => s + (sc.duration || 5), 0);
+
+  // 按原始场景比例分配句子
+  let sentenceIdx = 0;
+  const genResults = [];
+
+  for (let i = 0; i < genScenes.length; i++) {
+    const ratio = (genScenes[i].duration || 5) / genTotal;
+    const targetCount = Math.round(sentences.length * ratio);
+    const start = sentenceIdx;
+    const end = Math.min(sentenceIdx + Math.max(1, targetCount), sentences.length);
+    genResults.push(sentences.slice(start, end).join(' '));
+    sentenceIdx = end;
+  }
+
+  // 确保所有句子都分配完
+  if (sentenceIdx < sentences.length && genResults.length > 0) {
+    genResults[genResults.length - 1] += ' ' + sentences.slice(sentenceIdx).join(' ');
+  }
+
+  // 方案A：将原始场景的结果映射到全部场景
+  // 策略：按 allScenes 的时长比例，从 genResults 中分配
   const result = [];
+  let genIdx = 0;
+  let genAccum = 0; // 在原始场景中累积的时长
 
-  // 用标点符号分割成句子
-  const sentences = fullScript
-    .split(/([。！？\n])/)
-    .map(s => s.trim())
-    .filter(s => s.length > 0 && s !== '。' && s !== '！' && s !== '？' && s !== '\n');
+  for (let i = 0; i < allScenes.length; i++) {
+    const allDur = allScenes[i].duration || 5;
+    const allRatio = allDur / allTotal;
 
-  // 重新组合成带标点的句子
-  const paragraphs = [];
-  let current = '';
-  for (let i = 0; i < sentences.length; i++) {
-    const s = sentences[i];
-    const next = sentences[i + 1];
-    current += s;
-    if (['。', '！', '？'].includes(next)) {
-      current += next;
-      i++; // 跳过标点
-    }
-    if (current.trim()) paragraphs.push(current.trim());
-    current = '';
-  }
+    // 计算该场景应得的字符数
+    const totalChars = genResults.reduce((s, g) => s + g.length, 0);
+    const targetChars = Math.round(totalChars * allRatio);
 
-  // 按比例分配段落到各场景
-  let charCount = paragraphs.join('').length;
-  let pos = 0;
+    // 从 genResults 中提取对应比例的文本
+    let extracted = '';
 
-  for (let i = 0; i < scenes.length; i++) {
-    const scene = scenes[i];
-    const ratio = (scene.duration || 5) / totalDuration;
-    const targetChars = Math.round(charCount * ratio);
-
-    let sceneChars = '';
-    let startPos = pos;
-
-    while (pos < paragraphs.length) {
-      sceneChars += (sceneChars ? ' ' : '') + paragraphs[pos];
-      pos++;
-      if (sceneChars.length >= targetChars * 0.9 || pos >= paragraphs.length) break;
+    while (genIdx < genResults.length && extracted.length < targetChars) {
+      const chunk = genResults[genIdx];
+      const need = targetChars - extracted.length;
+      if (chunk.length <= need) {
+        extracted += (extracted ? ' ' : '') + chunk;
+        genIdx++;
+      } else {
+        // 部分取用（按句子断开更自然）
+        const partial = chunk.substring(0, need);
+        const lastPeriod = Math.max(partial.lastIndexOf('。'), partial.lastIndexOf('！'), partial.lastIndexOf('？'));
+        if (lastPeriod > 0) {
+          extracted += (extracted ? ' ' : '') + chunk.substring(0, lastPeriod + 1);
+          genResults[genIdx] = chunk.substring(lastPeriod + 1);
+        } else {
+          extracted += (extracted ? ' ' : '') + partial;
+          genResults[genIdx] = chunk.substring(need);
+        }
+        break;
+      }
     }
 
-    result.push(sceneChars || paragraphs[pos - 1] || '');
+    result.push(extracted || (genResults[genIdx] || ''));
+    genAccum += allDur;
   }
 
-  // 确保每个场景都有内容
-  return result.map((text, i) => text || `场景${i + 1}内容`).slice(0, scenes.length);
+  return result.slice(0, allScenes.length);
 }
 
-/**
- * 验证口播稿质量
- */
 function validateScript(fullScript, sceneScripts) {
   const chars = fullScript.replace(/\s/g, '');
   const sentences = fullScript.split(/[。！？\n]/).filter(s => s.trim().length > 0);
@@ -451,11 +459,8 @@ function validateScript(fullScript, sceneScripts) {
   };
 }
 
-/**
- * 打印摘要
- */
 function printSummary(result, scenes) {
-  const { stats, sceneScripts, fullScript } = result;
+  const { stats, sceneScripts } = result;
 
   console.log('\n========== 口播稿质量报告 ==========');
   console.log(`总字数：${stats.totalChars}`);
@@ -468,13 +473,11 @@ function printSummary(result, scenes) {
 
   console.log('\n--- 逐场景口播（预览前3句）---');
   sceneScripts.forEach((script, i) => {
-    const preview = script.split(/[。！？]/)[0] || script;
-    console.log(`  场景${i + 1} [${scenes[i]?.layout}]: ${preview.slice(0, 40)}...`);
+    const preview = (script || '').split(/[。！？]/)[0] || script || '(空)';
+    console.log(`  场景${i + 1} [${scenes[i]?.layout}]: ${preview.slice(0, 50)}${preview.length > 50 ? '...' : ''}`);
   });
 
-  if (stats.quality === 'FAIL') {
-    console.log('\n⚠️  口播稿含书面语词汇，建议手动优化或重试');
-  }
+  if (stats.quality === 'FAIL') console.log('\n⚠️  口播稿含书面语词汇，建议手动优化或重试');
 }
 
 // ============ 执行 ============
