@@ -318,23 +318,8 @@ for (let i = 0; i < total; i++) {
   // ── Step 4: 合并视频 + 配音 ──
   console.log('  [4/4] 合并音视频...');
 
-  let audioToMerge = ttsFile;
-  if (bgmPath && fs.existsSync(bgmPath)) {
-    const mixedAudio = ttsFile.replace('.mp3', '_mixed.mp3');
-    try {
-      execSync(`"${FFMPEG}" -y -i "${ttsFile}" -i "${bgmPath}" ` +
-        `-filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1.0 0.12[aout]" ` +
-        `-map "[aout]" -acodec libmp3lame -b:a 192k -shortest "${mixedAudio}"`, {
-          encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
-        });
-      audioToMerge = mixedAudio;
-    } catch (e) {
-      console.warn(`        ⚠ BGM 混流失败: ${e.message.split('\n').slice(-1)[0]}`);
-    }
-  }
-
   try {
-    execSync(`"${FFMPEG}" -y -i "${clipFile}" -i "${audioToMerge}" ` +
+    execSync(`"${FFMPEG}" -y -i "${clipFile}" -i "${ttsFile}" ` +
       `-c:v copy -c:a aac -b:a 192k "${finalClip}"`, {
         encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
       });
@@ -396,11 +381,66 @@ try {
     console.warn(`  ⚠ generate_content_pack.js 未找到，跳过内容包生成`);
   }
 
+  // ========== BGM 混音（add_bgm.py 集成） ==========
+  const bgmConfig = config.bgm || {};
+  const bgmStyle = bgmConfig.style || 'tech-corporate';
+  const bgmMood = bgmConfig.mood || 'ambient';
+  const bgmVolume = bgmConfig.volume || 0.3;
+  const bgmFadeIn = bgmConfig.fadeIn || 2.0;
+  const bgmFadeOut = bgmConfig.fadeOut || 3.0;
+  const finalWithBgm = finalOutput.replace('.mp4', '_with_bgm.mp4');
+
+  // 优先用 --bgm 参数指定的文件，否则用 add_bgm.py 随机选曲
+  if (bgmPath && fs.existsSync(bgmPath)) {
+    // 方式1：直接指定 BGM 文件
+    console.log(`\n  添加 BGM（指定文件）: ${path.basename(bgmPath)}`);
+    try {
+      // 获取视频时长用于淡出
+      let fadeOutStart = Math.max(0, finalDur - bgmFadeOut);
+      execSync(`"${FFMPEG}" -y -i "${finalOutput}" -i "${bgmPath}" ` +
+        `-filter_complex "[1:a]volume=${bgmVolume},afade=type=in:st=0:d=${bgmFadeIn},afade=type=out:st=${fadeOutStart}:d=${bgmFadeOut}[BGM];[0:a][BGM]amix=inputs=2:duration=first:normalize=0[mixed]" ` +
+        `-map 0:v -map "[mixed]" -c:v copy -c:a aac -b:a 192k "${finalWithBgm}"`, {
+        encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
+      });
+      console.log(`  ✓ BGM 混音完成: ${finalWithBgm}`);
+      // 用含BGM版本替换final
+      try { fs.renameSync(finalWithBgm, finalOutput); } catch(e) { /* 保留两个文件 */ }
+    } catch (e) {
+      console.warn(`  ⚠ BGM 混音失败: ${e.message.split('\n').slice(-1)[0]}`);
+    }
+  } else {
+    // 方式2：通过 add_bgm.py 随机选曲
+    const addBgmScript = path.join(
+      process.env.USERPROFILE || '~',
+      '.qclaw', 'skills', 'bgm-library', 'scripts', 'add_bgm.py'
+    );
+    if (fs.existsSync(addBgmScript)) {
+      console.log(`\n  添加 BGM（随机选曲: ${bgmStyle}/${bgmMood}）...`);
+      try {
+        execSync(`python "${addBgmScript}" --input "${finalOutput}" --output "${finalWithBgm}" ` +
+          `--style ${bgmStyle} --mood ${bgmMood} --volume ${bgmVolume} ` +
+          `--fade-in ${bgmFadeIn} --fade-out ${bgmFadeOut}`, {
+          encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe', timeout: 300
+        });
+        console.log(`  ✓ BGM 混音完成: ${finalWithBgm}`);
+        // 用含BGM版本替换final
+        try { fs.renameSync(finalWithBgm, finalOutput); } catch(e) { /* 保留两个文件 */ }
+      } catch (e) {
+        console.warn(`  ⚠ BGM 混音失败: ${e.message.split('\n').slice(-1)[0]}`);
+        console.warn(`  → 视频无BGM，但可正常播放`);
+      }
+    } else {
+      console.log(`\n  ⚠ add_bgm.py 未找到，跳过 BGM 混音`);
+      console.log(`    安装 bgm-library 技能即可自动添加 BGM`);
+    }
+  }
+
   console.log('');
   console.log('╔══════════════════════════════════════════════╗');
   console.log(`║  ✅ 完成！                                     ║`);
   console.log(`║  输出: ${finalOutput}`);
-  console.log(`║  大小: ${finalSize} MB`);
+  const finalSizeNow = (fs.statSync(finalOutput).size / 1024 / 1024).toFixed(2);
+  console.log(`║  大小: ${finalSizeNow} MB`);
   console.log(`║  时长: ${finalDur.toFixed(1)}s`);
   console.log(`║  封面: ${coverFile}`);
   console.log(`║  内容包: ${path.join(outputDir, 'content_pack.md')}`);
