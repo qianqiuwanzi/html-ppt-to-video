@@ -489,7 +489,16 @@ html-ppt-to-video/
 
 ## 版本
 
-- v1.1.0 (2026-06-10): 文案生成方案彻底 redesign（自然语言生成）
+- v1.3.0 (2026-06-11): 修复字幕缺失 + TTS读错内容 bug
+  - 🐛 **L1修复**：`mix_audio.js:extractSceneText` 读取路径错误
+    - 错误：读 `scene.narration`（undefined）→ fallback 拼接 kicker+title 碎片
+    - 修复：优先读 `scene.data.narration`，再回退 `scene.narration`
+  - 🐛 **L2修复**：`render_per_scene.js` 写入 narration 时未同步写入 subtitle
+    - 错误：`inject_subtitle_gsap.js` 读取 `scene.data.subtitle`（undefined）→ 不注入字幕
+    - 修复：AI 生成文案后同步写入 `data.narration` 和 `data.subtitle`
+  - ✅ 根因：生成和提取使用不同的数据结构路径（`scene.data.narration` vs `scene.narration`）
+
+- v1.2.0 (2026-06-10): BGM 混音集成
   - ✅ 新增 `generate_spoken_script.js`：AI生成整篇口播稿 → 按场景时长拆分 → narration
     - 旧方案：模板拼接（机械、不口语）
     - 新方案：整篇自然语言 → 按场景拆分（口语化、连贯）

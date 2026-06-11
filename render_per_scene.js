@@ -127,6 +127,8 @@ const scenes = config.scenes || [];
             if (result.sceneScripts[i]) {
               if (!config.scenes[i].data) config.scenes[i].data = {};
               config.scenes[i].data.narration = result.sceneScripts[i];
+              // [v1.3.0] 同步写入 subtitle（TTS 提取 narration，字幕注入读取 subtitle）
+              config.scenes[i].data.subtitle = result.sceneScripts[i];
             }
           }
           config._fullScript = result.fullScript;
