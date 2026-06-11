@@ -80,8 +80,15 @@ function injectSubtitleGSAP(html, subtitleText, duration, orientation) {
 
   const gsapInject = '\n' + gsapLines.join('\n  ') + '\n';
 
+  // 注入到 __timelines["main"] = tl 之后（确保 timeline 对象已存在）
   if (!html.includes('Subtitle GSAP (v0.7.0)')) {
-    html = html.replace(/(window\.__timelines\s*=\s*window\.__timelines\s*\|\|\s*\{\})/, (m) => m + gsapInject);
+    const anchor2 = /window\.__(?:timelines|tl_main)["\]]?\s*=\s*tl\s*;?/;
+    if (anchor2.test(html)) {
+      html = html.replace(anchor2, (m) => m + gsapInject);
+    } else {
+      // fallback: 注入到 </script> 前
+      html = html.replace(/(<\/script>)(?!.*<\/script>)/s, gsapInject + '\n$1');
+    }
   }
 
   return html;
@@ -108,7 +115,11 @@ if (require.main === module) {
   let orientation = 'vertical';
 
   try {
-    const configPath = path.join(sceneDir, '..', 'config.json');
+    // config.json 可能在上级或上两级目录（兼容不同项目结构）
+    let configPath = path.join(sceneDir, '..', 'config.json');
+    if (!fs.existsSync(configPath)) {
+      configPath = path.join(sceneDir, '..', '..', 'config.json');
+    }
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     const sceneIdx = parseInt(path.basename(sceneDir).replace('scene_', ''));
     const scene = config.scenes && config.scenes[sceneIdx];
