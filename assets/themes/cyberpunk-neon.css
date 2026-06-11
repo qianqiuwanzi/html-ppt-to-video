@@ -1,0 +1,40 @@
+/* cyberpunk-neon — html-ppt theme */
+:root {
+  --bg: #0a0a0a;
+  --text-1: #00ffff;
+  --text-2: #ff00ff;
+  --text-3: #00ff41;
+  --accent: #00ffff;
+  --accent-2: #ff00ff;
+  --accent-3: #ffff00;
+  --good: #00ff41;
+  --bad: #ff0044;
+  --radius: 0px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  text-shadow: 0 0 10px var(--accent), 0 0 20px var(--accent);
+}
+
+h1, h2, h3 {
+  color: var(--text-1);
+  text-shadow: 0 0 10px var(--accent), 0 0 20px var(--accent), 0 0 40px var(--accent);
+}
+
+.accent {
+  color: var(--accent-2);
+  text-shadow: 0 0 10px var(--accent-2), 0 0 20px var(--accent-2);
+}
+
+.kicker {
+  color: var(--text-3);
+  text-shadow: 0 0 5px var(--text-3);
+}
+
+/* Neon border glow */
+.border-glow {
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 10px var(--accent), inset 0 0 10px var(--accent);
+}

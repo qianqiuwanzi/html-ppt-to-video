@@ -128,8 +128,9 @@ function generateContentPack(config) {
   const sourceUrl = config.sourceUrl || '（未记录原文链接）';
   
   // 2. 短视频文案：纯口播稿（不含场景编号和 layout）
+  // narration 存在于 s.data.narration（render_per_scene.js 写入格式）
   const narrationText = origScenes
-    .map(s => (s.narration || '').trim())
+    .map(s => (s.data && s.data.narration || s.narration || '').trim())
     .filter(Boolean)
     .join('\n\n');
   

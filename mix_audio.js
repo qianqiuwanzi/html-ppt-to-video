@@ -266,7 +266,7 @@ exports.mergeAudioClip = mergeAudioClip;
 function concatClips(clipFiles, outputFile) {
   const tmpDir = path.dirname(outputFile);
   const listFile = path.join(tmpDir, '_concat_list.txt');
-  const list = clipFiles.map(f => `file '${f.replace(/\\/g, "'")}'`).join('\n');
+  const list = clipFiles.map(f => `file '${f.replace(/\\/g, '/')}'`).join('\n');
   fs.writeFileSync(listFile, list, 'utf8');
   execSync(`"${FFMPEG}" -y -f concat -safe 0 -i "${listFile}" -c copy "${outputFile}"`, {
     encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'

@@ -43,7 +43,7 @@ const { assignDiversity } = require('./diversity_assigner');
 // ========== 参数 ==========
 const args = process.argv.slice(2);
 let configPath = null, bgmPath = null, outputDir = null, finalOutput = null;
-let sourceFile = null, voice = 'zh-CN-YunjianNeural', speed = 20;
+let sourceFile = null, voice = 'zh-CN-YunjianNeural', speed = 20, noDiversity = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--config') configPath = args[++i];
@@ -53,6 +53,7 @@ for (let i = 0; i < args.length; i++) {
   else if (args[i] === '--source') sourceFile = args[++i];
   else if (args[i] === '--voice') voice = args[++i];
   else if (args[i] === '--speed') speed = parseInt(args[++i]);
+  else if (args[i] === '--no-diversity') noDiversity = true;
 }
 
 if (!configPath) {
@@ -109,13 +110,14 @@ const scenes = config.scenes || [];
     if (config.scenes[si].data && config.scenes[si].data.narration && config.scenes[si].data.narration.trim()) nCount++;
   }
 
-  // 方案1：generate_spoken_script.js（AI自然语言生成，有 OPENAI_API_KEY 时）
-  if (process.env.OPENAI_API_KEY && nCount < config.scenes.length * 0.5) {
+  // 方案1：generate_spoken_script.js（AI自然语言生成，v1.2.0 使用 QClaw 本地网关，无需 OPENAI_API_KEY）
+  if (nCount < config.scenes.length * 0.5) {
     console.log('  [方案1] generate_spoken_script.js（AI生成整篇口播稿）...');
     try {
       var tmpOut = path.join(path.dirname(configPath), '.spoken_tmp.json');
-      execSync('node "' + __dirname + '/generate_spoken_script.js" --config "' + configPath + '" --output "' + tmpOut + '"',
-        { stdio: 'inherit', cwd: __dirname, shell: true }
+      var absConfigPath = path.resolve(configPath);
+      execSync('node "' + __dirname + '/generate_spoken_script.js" --config "' + absConfigPath + '" --output "' + tmpOut + '"',
+        { stdio: 'inherit', cwd: path.dirname(absConfigPath), shell: true }
       );
       if (fs.existsSync(tmpOut)) {
         var result = JSON.parse(fs.readFileSync(tmpOut, 'utf8'));
@@ -140,31 +142,8 @@ const scenes = config.scenes || [];
     }
   }
 
-  // 方案2：generate_narration.js（模板拼接，填充未填 narration 的场景）
-  var n2c = 0;
-  for (var sj = 0; sj < config.scenes.length; sj++) {
-    if (config.scenes[sj].data && config.scenes[sj].data.narration && config.scenes[sj].data.narration.trim()) n2c++;
-  }
-  if (n2c < config.scenes.length) {
-    console.log('  [方案2] generate_narration.js（模板拼接，' + n2c + '/' + config.scenes.length + '已有文案）...');
-    try {
-      var narPath = path.join(__dirname, 'generate_narration.js');
-      if (fs.existsSync(narPath)) {
-        var { generateNarration } = require(narPath);
-        var nr = generateNarration(config, { voice: voice, speed: speed });
-        if (nr.scenes) {
-          for (var k = 0; k < nr.scenes.length; k++) {
-            if (nr.scenes[k] && nr.scenes[k].data && nr.scenes[k].data.narration) {
-              if (!config.scenes[k].data) config.scenes[k].data = {};
-              config.scenes[k].data.narration = nr.scenes[k].data.narration;
-            }
-          }
-        }
-      }
-    } catch(e2) {
-      console.warn('  ⚠ 模板拼接失败: ' + e2.message);
-    }
-  }
+  // 方案2：已移除（generate_narration.js 无 module.exports，且已有更好的 generate_spoken_script.js）
+  // 如果 AI 生成失败，回退到 heuristic 规则引擎（在 generate_spoken_script.js 内部处理）
 
   var fN = config.scenes.filter(function(s){ return s.data && s.data.narration && s.data.narration.trim(); }).length;
   console.log('  ✓ 口播文案完成: ' + fN + '/' + config.scenes.length + ' 场景');
@@ -174,6 +153,9 @@ const scenes = config.scenes || [];
 
 
 // ========== 多样性分配 (v0.6.0) ==========
+if (noDiversity) {
+  console.log('  [diversity] 跳过 (--no-diversity), 使用原始场景数: ' + config.scenes.length);
+} else {
 const totalConfigDuration = scenes.reduce((a, s) => a + (s.duration || 0), 0);
 const diversity = assignDiversity(config.scenes, totalConfigDuration, {});
 config.scenes = diversity.scenes;
@@ -183,6 +165,7 @@ fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
 console.log('  [render] 多样性分配结果已写回 config.json');
 console.log(`\n  多样性: ${diversity.stats.mode}模式 (${totalConfigDuration}s)`);
 console.log(`  布局: ${diversity.stats.layouts.used}/${diversity.stats.layouts.target}, 动画: ${diversity.stats.animations.used}/${diversity.stats.animations.target}, FX: ${diversity.stats.fx.used}/${diversity.stats.fx.target}`);
+} // end if noDiversity
 const total = config.scenes.length;
 
 if (outputDir === null) {
@@ -352,36 +335,39 @@ if (finalClips.length === 0) {
   process.exit(1);
 }
 
+// ========== [v1.0.0] 输出内容包（独立于拼接，放在try之外确保总是执行） ==========
+(function generateContentPack() {
+  const packScript = path.join(__dirname, 'generate_content_pack.js');
+  const packOutput = path.join(outputDir, 'content_pack.md');
+  if (!fs.existsSync(packScript)) {
+    console.warn('  ⚠ generate_content_pack.js 未找到，跳过内容包');
+    return;
+  }
+  try {
+    execSync(`node "${packScript}" --config "${path.resolve(configPath)}" --output "${packOutput}"`, {
+      stdio: 'pipe', encoding: 'utf8', timeout: 15000,
+      cwd: path.dirname(path.resolve(configPath))
+    });
+    console.log(`  ✓ 内容包已输出: ${packOutput}`);
+  } catch (e) {
+    console.warn(`  ⚠ 内容包生成失败: ${e.message.split('\n').slice(-2)[0]}`);
+  }
+})();
+
+// ========== 拼接（独立try-catch，不再阻塞后续步骤） ==========
 console.log('═'.repeat(52));
 console.log(`  拼接 ${finalClips.length}/${total} 个片段...`);
 
+let concatSuccess = false;
 try {
   concatClips(finalClips, finalOutput);
   const finalSize = (fs.statSync(finalOutput).size / 1024 / 1024).toFixed(2);
   const finalDur = getDuration(finalOutput);
+  concatSuccess = true;
 
-  // ========== [v1.0.0] 输出内容包 ==========
-  console.log('');
-  console.log('  输出内容包...');
-  
-  const packScript = path.join(__dirname, 'generate_content_pack.js');
-  if (fs.existsSync(packScript)) {
-    try {
-      const packOutput = path.join(outputDir, 'content_pack.md');
-      execSync(`node "${packScript}" --config "${path.resolve(configPath)}" --output "${packOutput}"`, {
-        stdio: 'pipe',
-        encoding: 'utf8',
-        timeout: 10000
-      });
-      console.log(`  ✓ 内容包已输出: ${packOutput}`);
-    } catch (e) {
-      console.warn(`  ⚠ 内容包生成失败: ${e.message.split('\n').slice(-2)[0]}`);
-    }
-  } else {
-    console.warn(`  ⚠ generate_content_pack.js 未找到，跳过内容包生成`);
-  }
+  if (concatSuccess) {
 
-  // ========== BGM 混音（add_bgm.py 集成） ==========
+  // ========== BGM 混音（依赖 concat 产物） ==========
   const bgmConfig = config.bgm || {};
   const bgmStyle = bgmConfig.style || 'tech-corporate';
   const bgmMood = bgmConfig.mood || 'ambient';
@@ -435,17 +421,22 @@ try {
     }
   }
 
+  } // end if concatSuccess
+
   console.log('');
   console.log('╔══════════════════════════════════════════════╗');
-  console.log(`║  ✅ 完成！                                     ║`);
+  console.log(`║  ${concatSuccess ? '✅ 完成！' : '⚠️  拼接未完成'}`);
   console.log(`║  输出: ${finalOutput}`);
-  const finalSizeNow = (fs.statSync(finalOutput).size / 1024 / 1024).toFixed(2);
-  console.log(`║  大小: ${finalSizeNow} MB`);
-  console.log(`║  时长: ${finalDur.toFixed(1)}s`);
+  try {
+    const finalSizeNow = (fs.statSync(finalOutput).size / 1024 / 1024).toFixed(2);
+    console.log(`║  大小: ${finalSizeNow} MB`);
+    const finalDur2 = getDuration(finalOutput);
+    console.log(`║  时长: ${finalDur2.toFixed(1)}s`);
+  } catch(e) { console.log(`║  大小/时长: 未知`); }
   console.log(`║  封面: ${coverFile}`);
   console.log(`║  内容包: ${path.join(outputDir, 'content_pack.md')}`);
   console.log('╚══════════════════════════════════════════════╝');
 } catch (err) {
   console.error(`\n❌ 拼接失败: ${err.message.split('\n').slice(-1)[0]}`);
-  process.exit(1);
+  // 不 exit(1)，内容包和摘要仍已输出
 }
