@@ -357,9 +357,10 @@ function mainCLI() {
   console.log('\n=== [3/4] 混流 TTS + BGM ===');
   const finalAudio = path.join(ttsOutputDir, 'final_audio.mp3');
   if (bgmPath && fs.existsSync(bgmPath)) {
+    // amix 输出默认与第一个输入同声道数（TTS=单声道），需强制升到立体声
     execSync(`"${FFMPEG}" -y -i "${combinedTts}" -i "${bgmPath}" ` +
-      `-filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1.0 0.30[aout]" ` +
-      `-map "[aout]" -acodec libmp3lame -b:a 192k -shortest "${finalAudio}"`, {
+      `-filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1.0 0.30[aout];[aout]aformat=channel_layouts=stereo[aout_stereo]" ` +
+      `-map "[aout_stereo]" -acodec libmp3lame -b:a 192k -shortest "${finalAudio}"`, {
         encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
       });
     console.log(`  ✓ BGM 混流完成: ${path.basename(bgmPath)}`);
