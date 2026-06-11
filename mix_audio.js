@@ -346,7 +346,7 @@ function mainCLI() {
   // 拼接 TTS
   console.log('\n=== [2/4] 拼接 TTS ===');
   const concatListFile = path.join(ttsOutputDir, 'concat_list.txt');
-  fs.writeFileSync(concatListFile, ttsFiles.map(t => `file '${t.file.replace(/\\/g, "'")}'`).join('\n'), 'utf8');
+  fs.writeFileSync(concatListFile, ttsFiles.map(t => `file '${path.resolve(t.file).replace(/\\/g, '/')}'`).join('\n'), 'utf8');
   const combinedTts = path.join(ttsOutputDir, 'combined_tts.mp3');
   execSync(`"${FFMPEG}" -y -f concat -safe 0 -i "${concatListFile}" -acodec libmp3lame -b:a 192k "${combinedTts}"`, {
     encoding: 'utf8', shell: 'cmd.exe', stdio: 'pipe'
