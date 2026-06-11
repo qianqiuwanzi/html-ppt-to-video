@@ -54,7 +54,7 @@ function injectSubtitleGSAP(html, subtitleText, duration, orientation) {
 
   const subtitleHtml = '\n    <div class="subtitle-container">\n      ' + linesHtml + '\n    </div>\n';
 
-  if (!html.includes('subtitle-container')) {
+  if (!html.includes('class="subtitle-container"')) {
     // 插入在 </canvas> 后
     html = html.replace(/(<\/canvas>)/, (m) => m + subtitleHtml);
   }
