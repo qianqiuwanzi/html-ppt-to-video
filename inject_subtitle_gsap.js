@@ -3,90 +3,169 @@
 const fs = require('fs');
 const path = require('path');
 
-const MAX_CHARS_PER_LINE = 15;
-const FONT_SIZE_VERTICAL = 44;   // #5 竖屏标准40-48px，推荐44px
-const FONT_SIZE_HORIZONTAL = 32; // #5 横屏标准28-36px
-const BOTTOM_OFFSET = 100;        // 距离底部100px
-const FADE_DURATION = 0.3;      // 淡入/淡出时长
-const LINE_GAP = 0.1;           // 行间隔（前一行开始淡出到下一行开始淡入）
+// ========== daily-video-factory 字幕规范 ==========
+const MAX_CHARS_PER_LINE = 15;    // 每行最多15字
+const FONT_SIZE_VERTICAL = 42;    // 竖屏42px (daily-video-factory标准)
+const FONT_SIZE_HORIZONTAL = 32;  // 横屏32px
+const BOTTOM_MARGIN_V = 120;      // 底部边距 (类似ASS MarginV)
+const FADE_DURATION = 0.3;        // 淡入/淡出时长
 
 /**
- * 截断超长行（<=15字），超出部分用...表示
+ * 智能断句：将长文本按标点分割为≤15字的短句
+ * 规则：
+ * 1. 优先在标点处断句（，。！？、：；）
+ * 2. 每行≤15字
+ * 3. 禁止行尾出现标点
+ * 4. 超长句强制截断加...
  */
-function truncateLine(line) {
-  if (line.length <= MAX_CHARS_PER_LINE) return line;
-  // 用三个点代替椭圆符号，避免非ASCII字符编码问题
-  return line.substring(0, MAX_CHARS_PER_LINE - 3) + '...';
+function smartSplit(text) {
+  if (!text) return [];
+  
+  // 清洗文本：移除多余空格，统一标点
+  text = text.trim().replace(/\s+/g, ' ');
+  
+  const lines = [];
+  const punctuations = ['，', '。', '！', '？', '、', '：', '；'];
+  
+  while (text.length > 0) {
+    // 如果剩余文本≤15字，直接作为一行
+    if (text.length <= MAX_CHARS_PER_LINE) {
+      lines.push(text);
+      break;
+    }
+    
+    // 在15字范围内找最后一个标点
+    let cutPos = -1;
+    const searchRange = Math.min(MAX_CHARS_PER_LINE, text.length);
+    
+    for (let i = searchRange - 1; i >= 0; i--) {
+      if (punctuations.includes(text[i])) {
+        cutPos = i;
+        break;
+      }
+    }
+    
+    if (cutPos > 0) {
+      // 在标点处断句（不包含标点）
+      lines.push(text.substring(0, cutPos));
+      text = text.substring(cutPos + 1).trim();
+    } else {
+      // 15字内无标点，强制截断
+      lines.push(text.substring(0, MAX_CHARS_PER_LINE - 3) + '...');
+      text = text.substring(MAX_CHARS_PER_LINE - 3).trim();
+    }
+  }
+  
+  return lines.filter(l => l.length > 0);
 }
 
 /**
  * 注入字幕 GSAP 逐行时序动画
+ * 遵循 daily-video-factory 字幕规范：
+ * - 单行显示（同一时间只显示一行）
+ * - 每行≤15字，智能断句
+ * - 音画同步（根据TTS时长计算每行显示时间）
+ * - 底部居中，竖屏42px
+ * 
  * @param {string} html - 原始HTML
- * @param {string} subtitleText - 字幕文本（用 | 分隔行）
- * @param {number} duration - 场景时长（秒），用于计算每行显示时间
+ * @param {string} subtitleText - 字幕文本（完整 narration）
+ * @param {number} duration - 场景时长（秒）
  * @param {string} orientation - 'vertical'（9:16，默认）| 'horizontal'（16:9）
  * @returns {string} 注入后的HTML
  */
 function injectSubtitleGSAP(html, subtitleText, duration, orientation) {
   if (!subtitleText || !html) return html;
   duration = duration || 8;
-  // 默认竖屏（daily-video-factory 规则 #5.5）
   orientation = orientation || 'vertical';
 
-  // 1. 解析字幕行（| 分隔）
-  const lines = subtitleText.split('|').map(l => l.trim()).filter(Boolean).map(truncateLine);
+  // 1. 智能断句为≤15字的短句
+  const lines = smartSplit(subtitleText);
   if (lines.length === 0) return html;
 
   // 2. 计算每行显示时间（音画同步：平分时长）
   const perLineDuration = duration / lines.length;
 
-  // 3. 注入字幕 CSS（如果还没有）
+  // 3. 注入字幕 CSS（daily-video-factory 风格）
   if (!html.includes('subtitle-container')) {
     const fontSize = orientation === 'vertical' ? FONT_SIZE_VERTICAL : FONT_SIZE_HORIZONTAL;
-    const cssInsert = '\n    <style>\n    .subtitle-container { position: fixed; bottom: ' + BOTTOM_OFFSET + 'px; left: 0; width: 100%; text-align: center; padding: 0 48px; box-sizing: border-box; z-index: 15; pointer-events: none; }\n    .subtitle-line { display: none; background: rgba(0,0,0,0.62); color: #fff; font-size: ' + fontSize + 'px; line-height: 1.5; padding: 10px 24px; border-radius: 10px; max-width: 88%; margin: 0 auto 8px; word-break: break-all; font-family: \'Inter\', sans-serif; }\n    .subtitle-line.active { display: inline-block; }\n    </style>\n';
+    const cssInsert = `
+    <style>
+    /* Subtitle Style - daily-video-factory v18.0规范 */
+    .subtitle-container {
+      position: fixed;
+      bottom: ${BOTTOM_MARGIN_V}px;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      z-index: 100;
+      pointer-events: none;
+    }
+    .subtitle-line {
+      display: none;
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      font-size: ${fontSize}px;
+      font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+      font-weight: bold;
+      line-height: 1.4;
+      padding: 12px 28px;
+      border-radius: 8px;
+      max-width: 85%;
+      margin: 0 auto;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .subtitle-line.active {
+      display: inline-block;
+    }
+    </style>
+`;
     html = html.replace(/(<\/head>)/i, (m) => cssInsert + m);
   }
 
-  // 4. 注入字幕 HTML（容器 + 逐行 <span>，全部隐藏，由 GSAP 控制显示）
-  const linesHtml = lines.map((line, idx) =>
-    '<span class="subtitle-line" data-line="' + idx + '">' + line.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>'
-  ).join('\n    ');
-
-  const subtitleHtml = '\n    <div class="subtitle-container">\n      ' + linesHtml + '\n    </div>\n';
+  // 4. 注入字幕 HTML（只创建一个span，动态切换内容）
+  const subtitleHtml = `
+    <div class="subtitle-container">
+      <span class="subtitle-line" id="subtitle-active"></span>
+    </div>
+`;
 
   if (!html.includes('class="subtitle-container"')) {
-    // 插入在 </canvas> 后
     html = html.replace(/(<\/canvas>)/, (m) => m + subtitleHtml);
   }
 
-  // 5. 注入 GSAP 逐行时序动画
+  // 5. 注入 GSAP 逐行时序动画（单行切换，非多行叠加）
   const gsapLines = [];
-  gsapLines.push('  // Subtitle GSAP (v0.7.0) - 逐行时序，音画同步');
+  gsapLines.push('  // Subtitle GSAP (v1.0.0-dvf) - daily-video-factory规范');
+  gsapLines.push('  // 规则：单行显示，≤15字/行，音画同步，底部居中');
   gsapLines.push('  if (window.__timelines && window.__timelines["main"]) {');
   gsapLines.push('    var tl = window.__timelines["main"];');
-  gsapLines.push('    var lines = document.querySelectorAll(\'.subtitle-line\');');
+  gsapLines.push('    var subtitleEl = document.getElementById("subtitle-active");');
+  gsapLines.push('    var lines = ' + JSON.stringify(lines) + ';');
   gsapLines.push('    var perLine = ' + perLineDuration.toFixed(3) + ';');
-  gsapLines.push('    lines.forEach(function(el, i) {');
-  gsapLines.push('      var start = 0.4 + i * perLine;');  // 首行延迟0.4s，后续逐行推进
-  gsapLines.push('      var end = start + perLine - 0.1;');
-  gsapLines.push('      // 淡入');
-  gsapLines.push("      tl.fromTo(el, {opacity:0, y:20}, {opacity:1, y:0, duration:0.3, ease:\'power2.out\'}, start);");
-  gsapLines.push("      tl.add(function() { el.classList.add(\'active\'); }, start);");
-  gsapLines.push('      // 淡出');
-  gsapLines.push("      tl.to(el, {opacity:0, duration:0.3, ease:\'power2.in\'}, end);");
-  gsapLines.push("      tl.add(function() { el.classList.remove(\'active\'); }, end);");
+  gsapLines.push('    ');
+  gsapLines.push('    lines.forEach(function(text, i) {');
+  gsapLines.push('      var start = i * perLine;');
+  gsapLines.push('      var end = start + perLine - 0.15;');
+  gsapLines.push('      ');
+  gsapLines.push('      // 显示新字幕（带淡入）');
+  gsapLines.push('      tl.call(function() { subtitleEl.textContent = text; subtitleEl.classList.add("active"); }, null, start);');
+  gsapLines.push('      tl.fromTo(subtitleEl, {opacity:0, y:10}, {opacity:1, y:0, duration:0.25, ease:"power2.out"}, start);');
+  gsapLines.push('      ');
+  gsapLines.push('      // 淡出当前字幕');
+  gsapLines.push('      tl.to(subtitleEl, {opacity:0, duration:0.2, ease:"power2.in"}, end);');
   gsapLines.push('    });');
   gsapLines.push('  }');
 
   const gsapInject = '\n' + gsapLines.join('\n  ') + '\n';
 
-  // 注入到 __timelines["main"] = tl 之后（确保 timeline 对象已存在）
-  if (!html.includes('Subtitle GSAP (v0.7.0)')) {
-    const anchor2 = /window\.__(?:timelines|tl_main)["\]]?\s*=\s*tl\s*;?/;
+  // 注入到 __timelines["main"] = tl 之后
+  if (!html.includes('Subtitle GSAP (v1.0.0-dvf)')) {
+    const anchor2 = /window\._\_(?:timelines|tl_main)["\]]?\s*=\s*tl\s*;?/;
     if (anchor2.test(html)) {
       html = html.replace(anchor2, (m) => m + gsapInject);
     } else {
-      // fallback: 注入到 </script> 前
       html = html.replace(/(<\/script>)(?!.*<\/script>)/s, gsapInject + '\n$1');
     }
   }
@@ -115,7 +194,6 @@ if (require.main === module) {
   let orientation = 'vertical';
 
   try {
-    // config.json 可能在上级或上两级目录（兼容不同项目结构）
     let configPath = path.join(sceneDir, '..', 'config.json');
     if (!fs.existsSync(configPath)) {
       configPath = path.join(sceneDir, '..', '..', 'config.json');
@@ -124,7 +202,8 @@ if (require.main === module) {
     const sceneIdx = parseInt(path.basename(sceneDir).replace('scene_', ''));
     const scene = config.scenes && config.scenes[sceneIdx];
     if (scene && scene.data) {
-      subtitle = scene.data.subtitle || scene.data.script || '';
+      // 优先用 narration（配音同步文本）
+      subtitle = scene.data.narration || scene.data.subtitle || scene.data.script || '';
       duration = scene.duration || 8;
     }
     orientation = (config.width > config.height) ? 'horizontal' : 'vertical';
@@ -138,7 +217,7 @@ if (require.main === module) {
   const html = fs.readFileSync(htmlFile, 'utf8');
   const updatedHtml = injectSubtitleGSAP(html, subtitle, duration, orientation);
   fs.writeFileSync(htmlFile, updatedHtml, 'utf8');
-  console.log('  ✓ 字幕 GSAP 注入成功 (v0.7.0, ' + duration + 's, ' + orientation + ')');
+  console.log('  ✓ 字幕 GSAP 注入成功 (v1.0.0-dvf, ' + duration + 's, ' + orientation + ', ' + smartSplit(subtitle).length + '行)');
 }
 
-module.exports = { injectSubtitleGSAP };
+module.exports = { injectSubtitleGSAP, smartSplit };
