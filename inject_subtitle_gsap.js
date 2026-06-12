@@ -5,58 +5,92 @@ const path = require('path');
 
 // ========== daily-video-factory 字幕规范 ==========
 const MAX_CHARS_PER_LINE = 15;    // 每行最多15字
-const FONT_SIZE_VERTICAL = 42;    // 竖屏42px (daily-video-factory标准)
+const FONT_SIZE_VERTICAL = 44;    // 竖屏44px (规则明确要求)
 const FONT_SIZE_HORIZONTAL = 32;  // 横屏32px
 const BOTTOM_MARGIN_V = 120;      // 底部边距 (类似ASS MarginV)
 const FADE_DURATION = 0.3;        // 淡入/淡出时长
 
 /**
  * 智能断句：将长文本按标点分割为≤15字的短句
- * 规则：
- * 1. 优先在标点处断句（，。！？、：；）
- * 2. 每行≤15字
- * 3. 禁止行尾出现标点
- * 4. 超长句强制截断加...
+ * 对齐 daily-video-factory generate_ass.py smart_split() 逻辑
+ * 规则（SKILL.md v1.4.0）：
+ * 1. 遇标点自动断句
+ * 2. 禁止行尾出现标点
+ * 3. 顿号替换为空格
+ * 4. 每行≤15字（含空格，不含标点）
+ * 5. 超长无标点句用空格分词或硬截断
  */
 function smartSplit(text) {
   if (!text) return [];
   
-  // 清洗文本：移除多余空格，统一标点
-  text = text.trim().replace(/\s+/g, ' ');
+  // 预处理：换行替换为逗号（触发标点断句）
+  text = text.replace(/\r\n/g, '，').replace(/\n/g, '，').replace(/\r/g, '，');
+  // 顿号替换为空格
+  text = text.replace(/、/g, ' ');
+  // 移除引号
+  text = text.replace(/["'`]/g, '');
+  // 括号替换为逗号
+  text = text.replace(/[()\[\]{}<>]/g, '，');
+  // 合并多余空格
+  text = text.replace(/\s+/g, ' ').trim();
   
-  const lines = [];
-  const punctuations = ['，', '。', '！', '？', '、', '：', '；'];
+  if (!text) return [];
   
-  while (text.length > 0) {
-    // 如果剩余文本≤15字，直接作为一行
-    if (text.length <= MAX_CHARS_PER_LINE) {
-      lines.push(text);
-      break;
-    }
-    
-    // 在15字范围内找最后一个标点
-    let cutPos = -1;
-    const searchRange = Math.min(MAX_CHARS_PER_LINE, text.length);
-    
-    for (let i = searchRange - 1; i >= 0; i--) {
-      if (punctuations.includes(text[i])) {
-        cutPos = i;
-        break;
+  // 中文标点集合（断句标点，不含顿号已替换）
+  const PUNCT = new Set(['，', '。', '！', '？', '：', '；', ',', '.', '!', '?', ':', ';']);
+  
+  // 第一步：按标点断句（标点作为分隔符，不保留在结果中）
+  const sentences = [];
+  let current = '';
+  for (const ch of text) {
+    if (PUNCT.has(ch)) {
+      // 遇标点：结束当前句
+      if (current.trim()) {
+        sentences.push(current.trim());
       }
-    }
-    
-    if (cutPos > 0) {
-      // 在标点处断句（不包含标点）
-      lines.push(text.substring(0, cutPos));
-      text = text.substring(cutPos + 1).trim();
+      current = '';
     } else {
-      // 15字内无标点，强制截断
-      lines.push(text.substring(0, MAX_CHARS_PER_LINE - 3) + '...');
-      text = text.substring(MAX_CHARS_PER_LINE - 3).trim();
+      current += ch;
+    }
+  }
+  // 处理最后一句
+  if (current.trim()) {
+    sentences.push(current.trim());
+  }
+  
+  // 第二步：处理每个句子（短句直接保留，长句按空格分词再组合）
+  const result = [];
+  for (const sent of sentences) {
+    if (sent.length <= MAX_CHARS_PER_LINE) {
+      result.push(sent);
+    } else {
+      // 长句：按空格分词，组合成≤15字的行
+      const words = sent.split(/\s+/).filter(w => w.length > 0);
+      let line = '';
+      for (const word of words) {
+        if (!line) {
+          line = word;
+        } else if ((line + ' ' + word).length <= MAX_CHARS_PER_LINE) {
+          line += ' ' + word;
+        } else {
+          result.push(line);
+          line = word;
+        }
+      }
+      if (line) {
+        if (line.length <= MAX_CHARS_PER_LINE) {
+          result.push(line);
+        } else {
+          // 无空格可分，硬截断
+          for (let i = 0; i < line.length; i += MAX_CHARS_PER_LINE) {
+            result.push(line.substring(i, i + MAX_CHARS_PER_LINE));
+          }
+        }
+      }
     }
   }
   
-  return lines.filter(l => l.length > 0);
+  return result.filter(l => l.length > 0);
 }
 
 /**

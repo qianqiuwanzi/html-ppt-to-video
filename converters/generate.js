@@ -53,8 +53,6 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-ser
 .s-thanks h1 { font-size: 120px; font-weight: 900; }
 .gt { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 .s-thanks .sub { font-size: 40px; color: var(--text-dim); margin-top: 28px; }
-.subtitle-overlay { position: fixed; bottom: 100px; left:0; width:100%; text-align: center; padding:0 48px; box-sizing: border-box; opacity:0; z-index:15; pointer-events: none; }
-.subtitle-text { display: inline-block; background: rgba(0,0,0,0.62); color: #fff; font-size:38px; line-height:1.5; padding:10px 24px; border-radius:10px; max-width:88%; word-break:break-all; font-family: 'Inter',sans-serif; }
 .quote-wrap { display: flex; flex-direction: column; justify-content: center; align-items: center; flex:1; text-align: center; }
 .big-quote-text { font-size: 48px; font-weight: 600; line-height: 1.4; color: var(--text); font-style: italic; position: relative; padding: 0 40px; }
 .quote-author { font-size: 30px; color: var(--text-dim); margin-top: 24px; font-style: normal; }

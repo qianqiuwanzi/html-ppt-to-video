@@ -489,6 +489,21 @@ html-ppt-to-video/
 
 ## 版本
 
+- v1.4.0 (2026-06-12): 字幕规则遵循修复（三层根因修复）
+  - 🔴 **L1修复**：`converters/generate.js` 移除旧版字幕 CSS（`.subtitle-overlay` + `.subtitle-text`）
+    - 根因：v0.7.0 声明已移除但实际代码未修改（旧 CSS 仍残留）
+    - 现象：HTML 中同时存在两套字幕 CSS，样式冲突
+    - 修复：彻底删除第 56-57 行旧版 CSS
+  - 🔴 **L2修复**：`inject_subtitle_gsap.js` `smartSplit()` 重写，对齐 daily-video-factory 规则
+    - 根因：旧版 smartSplit 逻辑与规则不一致（标点处理错误）
+    - 规则：**遇标点自动断句，禁止行尾出现标点**（对齐 daily-video-factory generate_ass.py smart_split）
+    - 重写逻辑：换行→逗号 → 顿号→空格 → 按标点断句(标点不保留) → 短句直接保留 → 长句空格分词 → 硬截断
+    - 验证：7个测试用例全部 PASS（行尾无标点、≤15字/行）
+  - 🔴 **L3修复**：`FONT_SIZE_VERTICAL = 44`（与规则明确要求一致）
+    - 根因：代码写死 42px，规则明确要求 44px
+    - 修复：改为 `FONT_SIZE_VERTICAL = 44`
+  - ✅ 修复后需重新渲染视频生效
+
 - v1.3.0 (2026-06-11): 修复字幕缺失 + TTS读错内容 bug
   - 🐛 **L1修复**：`mix_audio.js:extractSceneText` 读取路径错误
     - 错误：读 `scene.narration`（undefined）→ fallback 拼接 kicker+title 碎片

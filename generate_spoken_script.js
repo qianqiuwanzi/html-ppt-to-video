@@ -351,7 +351,7 @@ function generateSceneNarrative(scene, index, total) {
  * 用原始场景（genScenes）的比例，拆分内容到全部场景（allScenes）
  */
 function splitByScenes(fullScript, genScenes, allScenes) {
-  // 用标点分割成句子
+  // ========== 第1步：把口播稿切成完整句子（绝不截断） ==========
   const rawParts = fullScript.split(/([。！？\n])/).map(s => s.trim());
   const sentences = [];
   let buf = '';
@@ -372,71 +372,54 @@ function splitByScenes(fullScript, genScenes, allScenes) {
     return allScenes.map(() => '');
   }
 
-  // 计算原始场景的总时长和比例
-  const genTotal = genScenes.reduce((s, sc) => s + (sc.duration || 5), 0);
-  const allTotal = allScenes.reduce((s, sc) => s + (sc.duration || 5), 0);
+  // ========== 第2步：按时长比例把句子分配给【全部】场景 ==========
+  // 关键规则：句子是原子单位，绝不截断！
+  const totalDuration = allScenes.reduce((s, sc) => s + (sc.duration || 3), 0);
+  const sceneSentenceCounts = allScenes.map(sc => {
+    const ratio = (sc.duration || 3) / totalDuration;
+    return Math.max(0, Math.round(sentences.length * ratio));
+  });
 
-  // 按原始场景比例分配句子
-  let sentenceIdx = 0;
-  const genResults = [];
-
-  for (let i = 0; i < genScenes.length; i++) {
-    const ratio = (genScenes[i].duration || 5) / genTotal;
-    const targetCount = Math.round(sentences.length * ratio);
-    const start = sentenceIdx;
-    const end = Math.min(sentenceIdx + Math.max(1, targetCount), sentences.length);
-    genResults.push(sentences.slice(start, end).join(' '));
-    sentenceIdx = end;
+  // 调整：确保总分配数 = 句子总数（把余数分配给最长的场景）
+  let assigned = sceneSentenceCounts.reduce((a, b) => a + b, 0);
+  let diff = sentences.length - assigned;
+  // diff > 0：句子有剩，按时长降序补给
+  if (diff > 0) {
+    const indices = allScenes.map((sc, i) => i).sort((a, b) => (allScenes[b].duration || 3) - (allScenes[a].duration || 3));
+    for (let k = 0; k < diff; k++) sceneSentenceCounts[indices[k % indices.length]]++;
   }
-
-  // 确保所有句子都分配完
-  if (sentenceIdx < sentences.length && genResults.length > 0) {
-    genResults[genResults.length - 1] += ' ' + sentences.slice(sentenceIdx).join(' ');
-  }
-
-  // 方案A：将原始场景的结果映射到全部场景
-  // 策略：按 allScenes 的时长比例，从 genResults 中分配
-  const result = [];
-  let genIdx = 0;
-  let genAccum = 0; // 在原始场景中累积的时长
-
-  for (let i = 0; i < allScenes.length; i++) {
-    const allDur = allScenes[i].duration || 5;
-    const allRatio = allDur / allTotal;
-
-    // 计算该场景应得的字符数
-    const totalChars = genResults.reduce((s, g) => s + g.length, 0);
-    const targetChars = Math.round(totalChars * allRatio);
-
-    // 从 genResults 中提取对应比例的文本
-    let extracted = '';
-
-    while (genIdx < genResults.length && extracted.length < targetChars) {
-      const chunk = genResults[genIdx];
-      const need = targetChars - extracted.length;
-      if (chunk.length <= need) {
-        extracted += (extracted ? ' ' : '') + chunk;
-        genIdx++;
-      } else {
-        // 部分取用（按句子断开更自然）
-        const partial = chunk.substring(0, need);
-        const lastPeriod = Math.max(partial.lastIndexOf('。'), partial.lastIndexOf('！'), partial.lastIndexOf('？'));
-        if (lastPeriod > 0) {
-          extracted += (extracted ? ' ' : '') + chunk.substring(0, lastPeriod + 1);
-          genResults[genIdx] = chunk.substring(lastPeriod + 1);
-        } else {
-          extracted += (extracted ? ' ' : '') + partial;
-          genResults[genIdx] = chunk.substring(need);
-        }
-        break;
-      }
+  // diff < 0：分配多了，从最短的场景收回（但每场景至少0句）
+  if (diff < 0) {
+    const indices = allScenes.map((sc, i) => i).sort((a, b) => (allScenes[a].duration || 3) - (allScenes[b].duration || 3));
+    for (let k = 0; k < -diff; k++) {
+      const idx = indices[k % indices.length];
+      if (sceneSentenceCounts[idx] > 0) sceneSentenceCounts[idx]--;
     }
-
-    result.push(extracted || (genResults[genIdx] || ''));
-    genAccum += allDur;
   }
 
-  return result.slice(0, allScenes.length);
+  // ========== 第3步：按顺序把句子填入场景 ==========
+  const result = [];
+  let cursor = 0;
+  for (let i = 0; i < allScenes.length; i++) {
+    const count = sceneSentenceCounts[i];
+    if (count <= 0) {
+      result.push('');  // 无口播的场景（纯视觉）
+    } else {
+      result.push(sentences.slice(cursor, cursor + count).join(''));
+      cursor += count;
+    }
+  }
+
+  // 安全防护：如果还有没分配完的句子，追加到最后一个有内容的场景
+  if (cursor < sentences.length) {
+    const tail = sentences.slice(cursor).join('');
+    for (let j = result.length - 1; j >= 0; j--) {
+      if (result[j] !== '') { result[j] += tail; break; }
+      if (j === 0) result[j] = tail;
+    }
+  }
+
+  return result;
 }
 
 function validateScript(fullScript, sceneScripts) {
