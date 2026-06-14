@@ -1,0 +1,29 @@
+/* rainbow-gradient — html-ppt theme */
+:root {
+  --bg: linear-gradient(135deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3);
+  --text-1: #ffffff;
+  --text-2: #f0f0f0;
+  --text-3: #e0e0e0;
+  --accent: #ffffff;
+  --accent-2: #ffff00;
+  --accent-3: #00ffff;
+  --good: #00ff00;
+  --bad: #ff0000;
+  --radius: 16px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  animation: rainbow-shift 10s ease infinite;
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+}
+
+@keyframes rainbow-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}

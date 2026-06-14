@@ -1,0 +1,25 @@
+/* japanese-minimal — html-ppt theme */
+:root {
+  --bg: #f8f4f0;
+  --text-1: #2c2c2c;
+  --text-2: #5a5a5a;
+  --text-3: #8a8a8a;
+  --accent: #c84a31;
+  --accent-2: #d4a574;
+  --accent-3: #6b8e5a;
+  --good: #6b8e5a;
+  --bad: #c84a31;
+  --radius: 0px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Noto Sans JP', sans-serif;
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-weight: 300;
+  letter-spacing: 0.05em;
+}

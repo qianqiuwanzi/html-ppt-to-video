@@ -182,10 +182,22 @@ console.log('[render] 输入类型: ' + resolvedInputType + (resolvedInputType =
 
 
 
-// ========== 多样性分配 (v0.6.0) ==========
+// ========== 场景规划 (v2.1.0: 文案驱动 vs 布局补全) ==========
 if (noDiversity) {
-  console.log('  [diversity] 跳过 (--no-diversity), 使用原始场景数: ' + config.scenes.length);
+  console.log('  [scenes] 跳过场景规划 (--no-diversity), 使用原始场景数: ' + config.scenes.length);
+} else if (config._fullScript && config._fullScript.trim()) {
+  // ✅ 新路径：从文案驱动场景规划（替代 diversity_assigner 的布局补全）
+  console.log('  [scenes] 检测到 _fullScript，使用文案驱动场景规划');
+  const { scriptToScenes } = require('./script_to_scenes');
+  const result = scriptToScenes(config._fullScript, config);
+  config.scenes = result.scenes;
+  console.log('  [scenes] 文案驱动: ' + result.stats.sceneCount + ' 场景, ' + result.stats.totalDuration + 's, ' + result.stats.layouts.used + ' 种布局');
+  // 写回 config.json
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+  console.log('  [scenes] 场景规划已写回 config.json');
 } else {
+  // 旧路径：布局补全（向后兼容，无 _fullScript 时使用）
+  console.log('  [scenes] 无 _fullScript，使用布局补全模式 (diversity_assigner)');
 const totalConfigDuration = scenes.reduce((a, s) => a + (s.duration || 0), 0);
 const diversity = assignDiversity(config.scenes, totalConfigDuration, {});
 config.scenes = diversity.scenes;
@@ -195,7 +207,7 @@ fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
 console.log('  [render] 多样性分配结果已写回 config.json');
 console.log(`\n  多样性: ${diversity.stats.mode}模式 (${totalConfigDuration}s)`);
 console.log(`  布局: ${diversity.stats.layouts.used}/${diversity.stats.layouts.target}, 动画: ${diversity.stats.animations.used}/${diversity.stats.animations.target}, FX: ${diversity.stats.fx.used}/${diversity.stats.fx.target}`);
-} // end if noDiversity
+}
 const total = config.scenes.length;
 
 if (outputDir === null) {

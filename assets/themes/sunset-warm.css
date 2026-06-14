@@ -1,0 +1,22 @@
+/* sunset-warm — html-ppt theme */
+:root {
+  --bg: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+  --text-1: #2d3436;
+  --text-2: #636e72;
+  --text-3: #b2bec3;
+  --accent: #e17055;
+  --accent-2: #fdcb6e;
+  --accent-3: #e84393;
+  --good: #00b894;
+  --bad: #e17055;
+  --radius: 18px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+}

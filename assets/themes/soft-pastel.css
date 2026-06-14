@@ -1,0 +1,22 @@
+/* soft-pastel — html-ppt theme */
+:root {
+  --bg: #fce4ec;
+  --text-1: #4a148c;
+  --text-2: #7b1fa2;
+  --text-3: #ab47bc;
+  --accent: #f48fb1;
+  --accent-2: #ce93d8;
+  --accent-3: #90caf9;
+  --good: #81c784;
+  --bad: #e57373;
+  --radius: 24px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+}

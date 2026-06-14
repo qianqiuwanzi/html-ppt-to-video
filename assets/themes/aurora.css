@@ -1,0 +1,25 @@
+/* aurora — html-ppt theme */
+:root {
+  --bg: #0f172a;
+  --text-1: #e2e8f0;
+  --text-2: #94a3b8;
+  --text-3: #64748b;
+  --accent: #22d3ee;
+  --accent-2: #a78bfa;
+  --accent-3: #34d399;
+  --good: #4ade80;
+  --bad: #f87171;
+  --radius: 20px;
+}
+
+body {
+  background: linear-gradient(135deg, var(--bg) 0%, #1e293b 100%);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}

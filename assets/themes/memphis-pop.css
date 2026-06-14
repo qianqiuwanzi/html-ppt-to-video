@@ -1,0 +1,23 @@
+/* memphis-pop — html-ppt theme */
+:root {
+  --bg: #ffe66d;
+  --text-1: #2d3436;
+  --text-2: #636e72;
+  --text-3: #b2bec3;
+  --accent: #e17055;
+  --accent-2: #74b9ff;
+  --accent-3: #a29bfe;
+  --good: #00b894;
+  --bad: #e17055;
+  --radius: 20px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-weight: 800;
+}

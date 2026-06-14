@@ -12,10 +12,19 @@ const fs = require('fs');
 const path = require('path');
 
 // Default html-ppt skill directory
-const DEFAULT_HP_DIR = path.join(
-  process.env.HOME || process.env.USERPROFILE || 'C:\\Users\\qianq',
-  '.qclaw', 'skills', 'html-ppt-skill'
-);
+// Priority: 1. --html-ppt-dir argument  2. env HTML_PPT_SKILL_DIR  3. auto-detect from script path
+function getDefaultSkillDir() {
+  // If --html-ppt-dir is provided via env, use it
+  if (process.env.HTML_PPT_SKILL_DIR) {
+    return process.env.HTML_PPT_SKILL_DIR;
+  }
+  // Fallback: auto-detect skill directory from script path (converters/..)
+  const scriptDir = path.dirname(path.resolve(__filename));
+  const skillDir = path.resolve(scriptDir, '..');
+  return skillDir;
+}
+
+const DEFAULT_SKILL_DIR = getDefaultSkillDir();
 
 // Token mapping: html-ppt tokens → hyperframes tokens
 // Some tokens map 1:1, others need renaming or grouping
@@ -110,21 +119,21 @@ function main() {
     process.exit(1);
   }
 
-  let hpDir = DEFAULT_HP_DIR;
+  let skillDir = DEFAULT_SKILL_DIR;
   let outputFmt = 'css';
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === '--html-ppt-dir' && args[i + 1]) {
-      hpDir = args[++i];
+      skillDir = args[++i];
     } else if (args[i] === '--output' && args[i + 1]) {
       outputFmt = args[++i];
     }
   }
 
-  const themePath = path.join(hpDir, 'assets', 'themes', `${themeName}.css`);
+  const themePath = path.join(skillDir, 'assets', 'themes', `${themeName}.css`);
   if (!fs.existsSync(themePath)) {
     console.error(`Theme file not found: ${themePath}`);
-    console.error(`Available themes: ${fs.readdirSync(path.join(hpDir, 'assets', 'themes')).filter(f => f.endsWith('.css')).map(f => f.replace('.css', '')).join(', ')}`);
+    console.error(`Available themes: ${fs.readdirSync(path.join(skillDir, 'assets', 'themes')).filter(f => f.endsWith('.css')).map(f => f.replace('.css', '')).join(', ')}`);
     process.exit(1);
   }
 

@@ -1,0 +1,22 @@
+/* nord — html-ppt theme */
+:root {
+  --bg: #2e3440;
+  --text-1: #eceff4;
+  --text-2: #d8dee9;
+  --text-3: #81a1c1;
+  --accent: #88c0d0;
+  --accent-2: #81a1c1;
+  --accent-3: #5e81ac;
+  --good: #a3be8c;
+  --bad: #bf616a;
+  --radius: 10px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+}

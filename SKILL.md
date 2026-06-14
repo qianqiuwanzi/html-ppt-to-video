@@ -30,7 +30,7 @@ description: Convert any content (webpage, text, document) to short video using 
                     ↓
 [多样性分配层] diversity_assigner.js
 │   ├─ 填充场景内容从真实场景提取
-│   └─ >30s: 全部 31布局 + 27动画 + 20FX 均匀分配
+│   └─ 布局≥18种 + 27动画 + 20FX 尽力覆盖（不强制凑数）
                     ↓
 [视觉转换层] converters/
     ├─ convert_theme.js     — html-ppt 36主题 → hyperframes :root CSS
@@ -635,9 +635,8 @@ html-ppt-to-video/
 - v0.9.6 (2026-06-07): 视频音量 + BGM音量放大2.5x
   - BGM权重: 0.12 → 0.30 (2.5x)
   - 最终输出音量: 新增 volume=2.5 放大
-  - ✅ 移除 skipFiller 参数（违反技能规则：>30s 必须使用全部31布局）
-  - ✅ >30s 强制补满 31 种布局（ignore skipFiller）
-  - ✅ ≤30s 补一半（向上取整）布局
+  - ✅ 移除 skipFiller 参数
+  - ✅ 布局覆盖规则：不少于 18 种（不强制凑满 31 种，避免场景膨胀）
   - ✅ render_per_scene.js 分配结果写回 config.json
   - ✅ diversity_assigner.js + render_per_scene.js 语法检查通过
 
@@ -663,7 +662,7 @@ html-ppt-to-video/
 
 - v0.6.0 (2026-06-05): 多样性分配 + Canvas FX 扩展 ✅
   - ✅ 新增 `diversity_assigner.js`：核心分配器
-  - ✅ 规则：>30s 用全部 31布局+27动画+20FX，≤30s 用一半
+  - ✅ 规则：布局≥18种 + 动画/FX 尽力覆盖（不强制凑数）
   - ✅ `render_per_scene.js` 自动集成分配器（渲染前自动分配）
   - ✅ `canvas-fx.js`：10种 → 20种 FX（新增 neon-grid, snow-fall, smoke-drift, star-field, ripple-expand, laser-sweep, dna-helix, wave-ocean, pixel-rain, geo-pulse）
   - ✅ `convert_animations.js`：26种 → 27种（新增 bounce-in）

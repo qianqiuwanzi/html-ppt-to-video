@@ -1,0 +1,25 @@
+/* pitch-deck-vc — html-ppt theme */
+:root {
+  --bg: #0a0e27;
+  --text-1: #ffffff;
+  --text-2: #b0b8d1;
+  --text-3: #6b7394;
+  --accent: #00d4ff;
+  --accent-2: #7b61ff;
+  --accent-3: #ff6b9d;
+  --good: #00ff88;
+  --bad: #ff4757;
+  --radius: 12px;
+}
+
+body {
+  background: linear-gradient(135deg, var(--bg) 0%, #1a1f3a 100%);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}

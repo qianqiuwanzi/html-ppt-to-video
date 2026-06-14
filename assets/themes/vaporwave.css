@@ -1,0 +1,33 @@
+/* vaporwave — html-ppt theme */
+:root {
+  --bg: linear-gradient(180deg, #ff00ff 0%, #00ffff 100%);
+  --text-1: #ffffff;
+  --text-2: #ff00ff;
+  --text-3: #00ffff;
+  --accent: #ff00ff;
+  --accent-2: #00ffff;
+  --accent-3: #ffff00;
+  --good: #00ff00;
+  --bad: #ff0000;
+  --radius: 20px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Comic Sans MS', cursive;
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  text-shadow: 0 0 10px var(--accent), 0 0 20px var(--accent);
+  animation: glitch 3s infinite;
+}
+
+@keyframes glitch {
+  0%, 100% { transform: translate(0); }
+  20% { transform: translate(-2px, 2px); }
+  40% { transform: translate(-2px, -2px); }
+  60% { transform: translate(2px, 2px); }
+  80% { transform: translate(2px, -2px); }
+}

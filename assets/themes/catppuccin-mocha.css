@@ -1,0 +1,22 @@
+/* catppuccin-mocha — html-ppt theme */
+:root {
+  --bg: #1e1e2e;
+  --text-1: #cdd6f4;
+  --text-2: #bac2de;
+  --text-3: #a6adc8;
+  --accent: #89b4fa;
+  --accent-2: #cba6f7;
+  --accent-3: #f9e2af;
+  --good: #a6e3a1;
+  --bad: #f38ba8;
+  --radius: 12px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+}

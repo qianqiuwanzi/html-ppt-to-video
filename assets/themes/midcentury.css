@@ -1,0 +1,23 @@
+/* midcentury — html-ppt theme */
+:root {
+  --bg: #f5e6d3;
+  --text-1: #3d2914;
+  --text-2: #6b4423;
+  --text-3: #a0826d;
+  --accent: #e07a5f;
+  --accent-2: #81b29a;
+  --accent-3: #f2cc8f;
+  --good: #81b29a;
+  --bad: #e07a5f;
+  --radius: 16px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Georgia', serif;
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+}

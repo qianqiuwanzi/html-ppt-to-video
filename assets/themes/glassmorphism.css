@@ -1,0 +1,30 @@
+/* glassmorphism — html-ppt theme */
+:root {
+  --bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --text-1: #ffffff;
+  --text-2: rgba(255, 255, 255, 0.9);
+  --text-3: rgba(255, 255, 255, 0.7);
+  --accent: #ffffff;
+  --accent-2: #fbbf24;
+  --accent-3: #34d399;
+  --good: #34d399;
+  --bad: #f87171;
+  --radius: 20px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  backdrop-filter: blur(10px);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}

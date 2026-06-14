@@ -1,0 +1,30 @@
+/* neo-brutalism — html-ppt theme */
+:root {
+  --bg: #fff9e6;
+  --text-1: #000000;
+  --text-2: #333333;
+  --text-3: #666666;
+  --accent: #ff6b00;
+  --accent-2: #0000ff;
+  --accent-3: #ff00ff;
+  --good: #00ff00;
+  --bad: #ff0000;
+  --radius: 0px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-weight: 900;
+  border: 4px solid var(--accent);
+  padding: 0.5rem;
+}
+
+.brutal-border {
+  border: 4px solid #000;
+  box-shadow: 8px 8px 0 #000;
+}

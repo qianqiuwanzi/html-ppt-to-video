@@ -1,0 +1,23 @@
+/* minimal-white — html-ppt theme */
+:root {
+  --bg: #ffffff;
+  --text-1: #000000;
+  --text-2: #333333;
+  --text-3: #999999;
+  --accent: #000000;
+  --accent-2: #666666;
+  --accent-3: #cccccc;
+  --good: #22c55e;
+  --bad: #ef4444;
+  --radius: 0px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-weight: 300;
+}

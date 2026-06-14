@@ -1,0 +1,23 @@
+/* corporate-clean — html-ppt theme */
+:root {
+  --bg: #ffffff;
+  --text-1: #2d3748;
+  --text-2: #4a5568;
+  --text-3: #718096;
+  --accent: #3182ce;
+  --accent-2: #2c5282;
+  --accent-3: #63b3ed;
+  --good: #38a169;
+  --bad: #e53e3e;
+  --radius: 8px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-weight: 600;
+}

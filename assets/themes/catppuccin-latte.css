@@ -1,0 +1,22 @@
+/* catppuccin-latte — html-ppt theme */
+:root {
+  --bg: #eff1f5;
+  --text-1: #4c4f69;
+  --text-2: #6c6f85;
+  --text-3: #9ca0b0;
+  --accent: #1e66f5;
+  --accent-2: #8839ef;
+  --accent-3: #df8e1d;
+  --good: #40a02b;
+  --bad: #d20f39;
+  --radius: 12px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+}

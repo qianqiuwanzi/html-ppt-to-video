@@ -52,10 +52,17 @@ exports.pickBGM = pickBGM;
  * 提取场景文本（从 scene 对象）
  */
 function extractSceneText(scene) {
-  // 【v1.3.0 修复】优先 scene.data.narration（AI生成写入路径），再回退 scene.narration（兼容旧格式）
+  // 【v1.4.0 修复】优先 narration，再回退 scene.narration（兼容旧格式）
   const narration = (scene.data && scene.data.narration && scene.data.narration.trim()) || (scene.narration && scene.narration.trim());
   if (narration) {
     return narration;
+  }
+
+  // 【v1.4.0 修复】auto-filled 场景（diversity_assigner生成）不配音
+  // auto 场景的 data.title/subtitle/items 是视觉布局填充，不应被 TTS 读取
+  const isAutoFilled = (scene.id && scene.id.startsWith('auto-')) || (scene.data && scene.data._isAutoFilled);
+  if (isAutoFilled) {
+    return ''; // 静音，TTS 生成器遇到空字符串会跳过
   }
 
   const data = scene.data || {};

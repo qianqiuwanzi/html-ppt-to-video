@@ -1,0 +1,24 @@
+/* academic-paper — html-ppt theme */
+:root {
+  --bg: #fafafa;
+  --text-1: #1a1a1a;
+  --text-2: #4a4a4a;
+  --text-3: #7a7a7a;
+  --accent: #2c5282;
+  --accent-2: #c53030;
+  --accent-3: #2f855a;
+  --good: #38a169;
+  --bad: #e53e3e;
+  --radius: 4px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Times New Roman', serif;
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-weight: 700;
+}

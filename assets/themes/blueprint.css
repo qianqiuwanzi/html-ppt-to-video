@@ -1,0 +1,23 @@
+/* blueprint — html-ppt theme */
+:root {
+  --bg: #0c1e3e;
+  --text-1: #c6d9f7;
+  --text-2: #8faadc;
+  --text-3: #5b7eb5;
+  --accent: #4472c4;
+  --accent-2: #70ad47;
+  --accent-3: #ed7d31;
+  --good: #70ad47;
+  --bad: #c00000;
+  --radius: 2px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-family: 'Courier New', monospace;
+}

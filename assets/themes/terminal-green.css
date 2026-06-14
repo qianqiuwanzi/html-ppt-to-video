@@ -1,0 +1,33 @@
+/* terminal-green — html-ppt theme */
+:root {
+  --bg: #000000;
+  --text-1: #00ff00;
+  --text-2: #00cc00;
+  --text-3: #009900;
+  --accent: #00ff00;
+  --accent-2: #00ff00;
+  --accent-3: #00ff00;
+  --good: #00ff00;
+  --bad: #ff0000;
+  --radius: 0px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  text-shadow: 0 0 5px var(--accent);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+}
+
+.blink {
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}

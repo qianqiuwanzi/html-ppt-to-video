@@ -1,0 +1,25 @@
+/* bauhaus — html-ppt theme */
+:root {
+  --bg: #ffffff;
+  --text-1: #000000;
+  --text-2: #333333;
+  --text-3: #666666;
+  --accent: #ed1c24;
+  --accent-2: #ffed00;
+  --accent-3: #00a551;
+  --good: #00a551;
+  --bad: #ed1c24;
+  --radius: 0px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Helvetica Neue', sans-serif;
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}

@@ -1,0 +1,28 @@
+/* swiss-grid — html-ppt theme */
+:root {
+  --bg: #ffffff;
+  --text-1: #000000;
+  --text-2: #333333;
+  --text-3: #666666;
+  --accent: #ff0000;
+  --accent-2: #000000;
+  --accent-3: #666666;
+  --good: #000000;
+  --bad: #ff0000;
+  --radius: 0px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Helvetica Neue', sans-serif;
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-weight: 300;
+}
+
+.grid-line {
+  border: 1px solid #e0e0e0;
+}

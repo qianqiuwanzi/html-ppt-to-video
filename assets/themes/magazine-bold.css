@@ -1,0 +1,25 @@
+/* magazine-bold — html-ppt theme */
+:root {
+  --bg: #1a1a1a;
+  --text-1: #ffffff;
+  --text-2: #e0e0e0;
+  --text-3: #a0a0a0;
+  --accent: #ff6b35;
+  --accent-2: #f7c948;
+  --accent-3: #4ecdc4;
+  --good: #4ecdc4;
+  --bad: #ff6b35;
+  --radius: 4px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Impact', 'Arial Black', sans-serif;
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-weight: 900;
+  text-transform: uppercase;
+}

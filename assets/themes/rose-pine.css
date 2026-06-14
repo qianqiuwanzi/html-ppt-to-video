@@ -1,0 +1,22 @@
+/* rose-pine — html-ppt theme */
+:root {
+  --bg: #191724;
+  --text-1: #e0def4;
+  --text-2: #c4a7e7;
+  --text-3: #9ccfd8;
+  --accent: #eb6f92;
+  --accent-2: #f6c177;
+  --accent-3: #3e8fb0;
+  --good: #9ccfd8;
+  --bad: #eb6f92;
+  --radius: 14px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+}

@@ -1,0 +1,38 @@
+/* news-broadcast — html-ppt theme */
+:root {
+  --bg: #1a1a2e;
+  --text-1: #ffffff;
+  --text-2: #e0e0e0;
+  --text-3: #a0a0a0;
+  --accent: #ff0000;
+  --accent-2: #ffffff;
+  --accent-3: #ffd700;
+  --good: #00ff00;
+  --bad: #ff0000;
+  --radius: 4px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.live-badge {
+  background: var(--accent);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+  text-transform: uppercase;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}

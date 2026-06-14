@@ -1,0 +1,25 @@
+/* sharp-mono — html-ppt theme */
+:root {
+  --bg: #000000;
+  --text-1: #ffffff;
+  --text-2: #cccccc;
+  --text-3: #888888;
+  --accent: #ffffff;
+  --accent-2: #888888;
+  --accent-3: #444444;
+  --good: #00ff00;
+  --bad: #ff0000;
+  --radius: 0px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Courier New', monospace;
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-weight: 100;
+  letter-spacing: 0.1em;
+}

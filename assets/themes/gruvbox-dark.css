@@ -1,0 +1,22 @@
+/* gruvbox-dark — html-ppt theme */
+:root {
+  --bg: #282828;
+  --text-1: #ebdbb2;
+  --text-2: #d5c4a1;
+  --text-3: #bdae93;
+  --accent: #fe8019;
+  --accent-2: #fabd2f;
+  --accent-3: #b8bb26;
+  --good: #98971a;
+  --bad: #cc241d;
+  --radius: 8px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+}

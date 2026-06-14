@@ -1,0 +1,24 @@
+/* xiaohongshu-white — html-ppt theme */
+:root {
+  --bg: #ffffff;
+  --text-1: #333333;
+  --text-2: #666666;
+  --text-3: #999999;
+  --accent: #ff2442;
+  --accent-2: #ff8c00;
+  --accent-3: #ffd700;
+  --good: #52c41a;
+  --bad: #ff2442;
+  --radius: 12px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+  font-weight: 600;
+}
