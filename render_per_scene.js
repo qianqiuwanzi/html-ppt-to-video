@@ -44,6 +44,7 @@ const { assignDiversity } = require('./diversity_assigner');
 const args = process.argv.slice(2);
 let configPath = null, bgmPath = null, outputDir = null, finalOutput = null;
 let sourceFile = null, voice = 'zh-CN-YunjianNeural', speed = 20, noDiversity = false;
+let inputType = 'text'; // text | url | file — 默认 text 禁止修改文案
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--config') configPath = args[++i];
@@ -54,6 +55,7 @@ for (let i = 0; i < args.length; i++) {
   else if (args[i] === '--voice') voice = args[++i];
   else if (args[i] === '--speed') speed = parseInt(args[++i]);
   else if (args[i] === '--no-diversity') noDiversity = true;
+  else if (args[i] === '--input-type') inputType = args[++i];
 }
 
 if (!configPath) {
@@ -64,6 +66,13 @@ if (!configPath) {
 // ========== 加载配置 ==========
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 const scenes = config.scenes || [];
+
+// ========== 输入类型检测 ==========
+// 优先级: CLI --input-type > config._inputType > 'text'（安全默认）
+const resolvedInputType = inputType || config._inputType || 'text';
+// 持久化输入类型到 config，后续重渲染也能保留
+config._inputType = resolvedInputType;
+console.log('[render] 输入类型: ' + resolvedInputType + (resolvedInputType === 'text' ? ' → 原文案模式（禁止AI修改）' : ''));
 
 // ========== 【方案C-修复】配置验证：检查场景内容完整性 ==========
 (function validateConfig() {
@@ -97,55 +106,74 @@ const scenes = config.scenes || [];
   }
 })();
 
-// ========== [v1.1.0] 口播文案生成（自然语言模式）==========
-// 旧方案：模板拼接 narration（机械、不口语）
-// 新方案：generate_spoken_script.js → AI生成整篇口播稿 → 按场景拆分 → narration
+// ========== [v2.0.0] 口播文案生成（输入类型感知模式）=========
 //
-// 优先级：generate_spoken_script.js（有API Key时AI生成） > generate_narration.js（模板拼接） > 已有 narration
+// v2.0.0 重构：根据输入类型决定是否生成口播稿
+//   text 类型 → 直接使用用户提供的原文案，禁止任何修改
+//   url/file 类型 → 使用 generate_spoken_script.js 进行 AI 提炼
+//
+// 优先级：inputType==='text'（跳过） > 已有 narration > AI 生成
 (function() {
-  console.log('[0/5] 生成口播文案 (v1.1.0 自然语言模式)...');
+  if (resolvedInputType === 'text') {
+    // 🔴 v2.0.0 强制规则：纯文本/文案输入 → 直接作为口播稿，禁止 AI 修改
+    var textCount = 0;
+    for (var st = 0; st < config.scenes.length; st++) {
+      if (config.scenes[st].data && config.scenes[st].data.narration && config.scenes[st].data.narration.trim()) {
+        textCount++;
+      }
+    }
+    console.log('[0/5] 口播文案: 输入类型=text, 跳过AI生成');
+    console.log('  ✓ 使用用户原文案: ' + textCount + '/' + config.scenes.length + ' 场景');
+    if (textCount === 0) {
+      console.warn('  ⚠ 所有场景无 narration（用户未提供文案），将使用 data.title 作为配音');
+    }
+    return; // ← 完全跳过下方 AI 生成逻辑
+  }
+
+  // --- 以下仅对 url/file 输入类型执行 ---
+  console.log('[0/5] 生成口播文案 (v2.0.0 输入类型=' + resolvedInputType + ')...');
 
   var nCount = 0;
   for (var si = 0; si < config.scenes.length; si++) {
     if (config.scenes[si].data && config.scenes[si].data.narration && config.scenes[si].data.narration.trim()) nCount++;
   }
 
-  // 方案1：generate_spoken_script.js（AI自然语言生成，v1.2.0 使用 QClaw 本地网关，无需 OPENAI_API_KEY）
-  if (nCount < config.scenes.length * 0.5) {
-    console.log('  [方案1] generate_spoken_script.js（AI生成整篇口播稿）...');
-    try {
-      var tmpOut = path.join(path.dirname(configPath), '.spoken_tmp.json');
-      var absConfigPath = path.resolve(configPath);
-      execSync('node "' + __dirname + '/generate_spoken_script.js" --config "' + absConfigPath + '" --output "' + tmpOut + '"',
-        { stdio: 'inherit', cwd: path.dirname(absConfigPath), shell: true }
-      );
-      if (fs.existsSync(tmpOut)) {
-        var result = JSON.parse(fs.readFileSync(tmpOut, 'utf8'));
-        fs.unlinkSync(tmpOut);
-        if (result.sceneScripts) {
-          for (var i = 0; i < config.scenes.length; i++) {
-            if (result.sceneScripts[i]) {
-              if (!config.scenes[i].data) config.scenes[i].data = {};
-              config.scenes[i].data.narration = result.sceneScripts[i];
-              // [v1.3.0] 同步写入 subtitle（TTS 提取 narration，字幕注入读取 subtitle）
-              config.scenes[i].data.subtitle = result.sceneScripts[i];
-            }
-          }
-          config._fullScript = result.fullScript;
-          config._scriptStats = result.stats;
-          var fn = config.scenes.filter(function(s){ return s.data && s.data.narration && s.data.narration.trim(); }).length;
-          console.log('  ✓ 口播稿已写入 narration: ' + fn + '/' + config.scenes.length + ' 场景');
-          console.log('  ✓ 质量: ' + result.stats.quality + ' | 长句' + result.stats.longSentences + '句 | '
-            + (result.stats.hasInteraction ? '有' : '无') + '互动结尾');
-        }
-      }
-    } catch(e) {
-      console.warn('  ⚠ AI生成失败: ' + e.message + ' → 回退到方案2');
-    }
+  // 如果所有场景已有完整 narration，跳过
+  if (nCount >= config.scenes.length) {
+    console.log('  ✓ 所有场景已有 narration, 跳过 AI 生成');
+    return;
   }
 
-  // 方案2：已移除（generate_narration.js 无 module.exports，且已有更好的 generate_spoken_script.js）
-  // 如果 AI 生成失败，回退到 heuristic 规则引擎（在 generate_spoken_script.js 内部处理）
+  // generate_spoken_script.js（AI自然语言生成，使用 QClaw 本地网关）
+  console.log('  [AI] generate_spoken_script.js（生成整篇口播稿）...');
+  try {
+    var tmpOut = path.join(path.dirname(configPath), '.spoken_tmp.json');
+    var absConfigPath = path.resolve(configPath);
+    execSync('node "' + __dirname + '/generate_spoken_script.js" --config "' + absConfigPath + '" --output "' + tmpOut + '"',
+      { stdio: 'inherit', cwd: path.dirname(absConfigPath), shell: true }
+    );
+    if (fs.existsSync(tmpOut)) {
+      var result = JSON.parse(fs.readFileSync(tmpOut, 'utf8'));
+      fs.unlinkSync(tmpOut);
+      if (result.sceneScripts) {
+        for (var i = 0; i < config.scenes.length; i++) {
+          if (result.sceneScripts[i]) {
+            if (!config.scenes[i].data) config.scenes[i].data = {};
+            config.scenes[i].data.narration = result.sceneScripts[i];
+            config.scenes[i].data.subtitle = result.sceneScripts[i];
+          }
+        }
+        config._fullScript = result.fullScript;
+        config._scriptStats = result.stats;
+        var fn = config.scenes.filter(function(s){ return s.data && s.data.narration && s.data.narration.trim(); }).length;
+        console.log('  ✓ 口播稿已写入 narration: ' + fn + '/' + config.scenes.length + ' 场景');
+        console.log('  ✓ 质量: ' + result.stats.quality + ' | 长句' + result.stats.longSentences + '句 | '
+          + (result.stats.hasInteraction ? '有' : '无') + '互动结尾');
+      }
+    }
+  } catch(e) {
+    console.warn('  ⚠ AI生成失败: ' + e.message);
+  }
 
   var fN = config.scenes.filter(function(s){ return s.data && s.data.narration && s.data.narration.trim(); }).length;
   console.log('  ✓ 口播文案完成: ' + fN + '/' + config.scenes.length + ' 场景');

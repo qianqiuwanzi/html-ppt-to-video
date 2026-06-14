@@ -793,7 +793,25 @@ async function readInput(opts) {
     return text;
   }
   if (opts.file) {
-    return fs.readFileSync(opts.file, 'utf-8');
+    // v2.0.0：检测文件类型，非 txt/md 文件调用 parse_file.js
+    const ext = require('path').extname(opts.file).toLowerCase();
+    if (['.txt', '.md', '.markdown'].includes(ext)) {
+      return require('fs').readFileSync(opts.file, 'utf-8');
+    } else {
+      console.error('[parse_input] 检测到非文本文件 (' + ext + ')，调用 parse_file.js 提取文本...');
+      const { execSync } = require('child_process');
+      const tmpFile = opts.file + '.extracted.txt';
+      execSync('node "' + __dirname + '/parse_file.js" --file "' + opts.file + '" --output "' + tmpFile + '"', {
+        stdio: 'inherit', shell: true
+      });
+      if (require('fs').existsSync(tmpFile)) {
+        const text = require('fs').readFileSync(tmpFile, 'utf-8');
+        // 清理临时文件
+        try { require('fs').unlinkSync(tmpFile); } catch(e) {}
+        return text;
+      }
+      throw new Error('文件解析失败: ' + opts.file);
+    }
   }
   if (opts.text) {
     return opts.text;

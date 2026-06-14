@@ -50,6 +50,18 @@ async function main() {
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   const allScenes = config.scenes || [];
 
+  // 🔴 v2.0.0 双重安全检查：text 类型直接退出
+  if (config._inputType === 'text') {
+    console.log('  ⛔ 输入类型=text, 跳过口播稿生成（用户原文案模式）');
+    return { fullScript: '', sceneScripts: [], stats: { totalChars: 0, totalSentences: 0, longSentences: 0, hasInteraction: false, hasOralWords: false, hasBadWords: false, badWordSamples: null, quality: 'SKIPPED' } };
+  }
+  // 如果所有场景已有完整 narration，也跳过
+  const hasAllNarration = allScenes.every(function(s) { return s.data && s.data.narration && s.data.narration.trim(); });
+  if (hasAllNarration) {
+    console.log('  ⛔ 所有场景已有 narration, 跳过口播稿生成');
+    return { fullScript: '', sceneScripts: [], stats: { totalChars: 0, totalSentences: 0, longSentences: 0, hasInteraction: false, hasOralWords: false, hasBadWords: false, badWordSamples: null, quality: 'SKIPPED' } };
+  }
+
   // 2. 方案A：检测原始场景（ID 不以 "auto-" 开头，且非 _isAutoFilled）
   const isAuto = (s) => (s.data && s.data._isAutoFilled) || (s.id && s.id.startsWith('auto-'));
   const originalScenes = allScenes.filter(s => !isAuto(s));

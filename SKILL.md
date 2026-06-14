@@ -7,39 +7,115 @@ description: Convert any content (webpage, text, document) to short video using 
 
 **一句话**：输入内容 → 自动生成抖音/B站竖屏短视频。
 
-## 架构
+## 架构（v2.0.0）
 
 ```
-输入内容（URL/网页/文本/文档）
-    ↓
-[网页获取层] scripts/fetch_webpage.js  ← 四级回退（HTTP→you-get→无头浏览器）
-    ↓
+[输入层] ══════════════════════════════════════
+  3 种输入类型：
+  ├─ URL/网页 → scripts/fetch_webpage.js （四级静默回退）
+  ├─ 文件(WORD/PPT/PDF/TXT/MD) → scripts/parse_file.js
+  └─ 纯文本/文案 → 直接作为口播稿（禁止AI修改）
+                      ↓
 [文本解析层] scripts/parse_input.js
-│   ├─ OPENAI_API_KEY 检查（入口处提前判断，无 Key 则明确提示）
-│   ├─ AI 解析失败时明确报错 + 自动回退 heuristic 模式
-│   └─ 场景内容验证（空数据/占位数据警告）
-    ↓
-[配置验证层] render_per_scene.js  ← 新增（v0.10.0）
-│   └─ 检查 config.json 场景数据完整性，>30% 占位数据则停止并报错
-    ↓
-[脚本生成层] AI提炼要点 → scene config JSON
-    ↓
-[多样性分配层] diversity_assigner.js ← v0.10.0 修复
-│   ├─ 填充场景内容从真实场景提取（不再是 Demo 假数据）
+│   ├─ AI 模式（有API Key / 无API Key 启发式回退）
+│   └─ text 类型：跳过 AI 解析，直接使用原文案
+                    ↓
+[配置验证层] render_per_scene.js
+│   └─ inputType 检测：text → 跳过口播稿生成
+│   └─ 检查 config.json 场景数据完整性
+                    ↓
+[脚本生成层] ──── 仅 url/file 类型 ────
+│   AI提炼要点 → scene config JSON
+│   text 类型：完全跳过，使用用户 narration
+                    ↓
+[多样性分配层] diversity_assigner.js
+│   ├─ 填充场景内容从真实场景提取
 │   └─ >30s: 全部 31布局 + 27动画 + 20FX 均匀分配
-    ↓
+                    ↓
 [视觉转换层] converters/
     ├─ convert_theme.js     — html-ppt 36主题 → hyperframes :root CSS
     ├─ convert_layout.js    — html-ppt 31布局 → hyperframes 场景HTML + GSAP
     ├─ convert_animations.js — html-ppt 27动画 → GSAP tween映射
     └─ map_fx.js            — Canvas FX名称映射 + 默认分配
-    ↓
+                    ↓
 [视频合成层] converters/generate.js → index.html
-    ↓
+                    ↓
 [渲染层] npx hyperframes render → video-only.mp4
-    ↓
+                    ↓
 [后期层] mix_audio.js → final.mp4（TTS+BGM）
 ```
+
+## 📥 支持的输入类型（v2.0.0）
+
+html-ppt-to-video 支持 **3 种输入类型**，通过 `--input-type` 参数指定：
+
+### 1. URL/网页（`--input-type url`）
+
+```powershell
+# 流程：抓取网页 → AI 提炼要点 → 生成口播稿 → 渲染视频
+node scripts/parse_input.js --url https://example.com/article --output config.json
+node render_per_scene.js --config config.json --input-type url
+```
+
+- 使用 `scripts/fetch_webpage.js` 静默抓取网页内容（HTTP → you-get → 无头浏览器四级回退）
+- 通过 `scripts/parse_input.js` 进行 AI 或启发式解析，提取核心要点
+- 由 `generate_spoken_script.js` 生成口播稿（AI 可重新组织语言）
+
+### 2. 文件（`--input-type file`）
+
+```powershell
+# 流程：解析文件 → AI 提炼要点 → 生成口播稿 → 渲染视频
+# 先提取文本：
+node scripts/parse_file.js --file document.docx --stdout
+# 或直接解析为配置：
+node scripts/parse_input.js --file document.docx --output config.json
+node render_per_scene.js --config config.json --input-type file
+```
+
+支持的文件格式：
+
+| 格式 | 解析方式 | 说明 |
+|------|---------|------|
+| `.txt` | 直接读取 | 纯文本文件 |
+| `.md` / `.markdown` | 直接读取 | Markdown 文档 |
+| `.docx` | mammoth + XML 回退 | Word 文档 |
+| `.pptx` | ZIP + XML 解析 | PowerPoint 幻灯片 |
+| `.pdf` | pdf-parse | PDF 文档（文字层） |
+
+- 文件到文本提取：`scripts/parse_file.js`
+- 文本到场景配置：`scripts/parse_input.js`（AI 或启发式）
+- 口播稿生成：由 `generate_spoken_script.js` 处理（AI 提炼）
+
+### 3. 纯文本/文案（`--input-type text`）
+
+```powershell
+# 🔴 强制规则：文案直接作为口播稿，禁止 AI 修改
+# 将文案写入 config.json 的 narration 字段后：
+node render_per_scene.js --config config.json --input-type text
+```
+
+**🔴 核心规则：**
+
+| 规则 | 说明 |
+|------|------|
+| **直接使用** | 用户提供的纯文本/文案直接作为口播稿，不做任何修改 |
+| **禁止 AI 重新生成** | `generate_spoken_script.js` 完全跳过（双重安全检查） |
+| **禁止提炼/改写** | 即使文案口语化程度不高，也按原文配读 |
+| **按场景拆分** | 文案需手动或按规则拆分为多场景的 `narration` 字段 |
+| **配置持久化** | `config._inputType = "text"` 写入 config.json，重渲染时保留 |
+
+**工作原理：**
+1. 用户将完整文案写入 `config.json` 各场景的 `data.narration` 字段
+2. `render_per_scene.js` 检测到 `inputType === 'text'` 或 `config._inputType === 'text'`
+3. **完全跳过** `[0/5] 口播文案生成` 步骤
+4. 直接使用 `narration` 字段内容进行 TTS 配音
+5. `generate_spoken_script.js` 内部也有第二道安全检测
+
+**默认行为：**
+- 如果未指定 `--input-type`，**默认为 `text`**（安全优先，不修改用户文案）
+- 如果要从 URL 或文件生成，必须显式指定 `--input-type url` 或 `--input-type file`
+
+---
 
 ## 使用方式
 
@@ -84,15 +160,36 @@ description: Convert any content (webpage, text, document) to short video using 
 
 > 每场景独立渲染 → 独立配音 → 拼接。TTS 时长 = 视频时长，彻底解决同步问题。
 
+**输入类型参数**（v2.0.0 新增）：
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--input-type text` | 纯文本/文案（禁止AI修改） | **✅ 默认值** |
+| `--input-type url` | URL/网页（AI提炼后生成口播） | |
+| `--input-type file` | 文件（AI提炼后生成口播） | |
+
 ```powershell
+# 纯文本/文案 → 直接作为口播稿（禁止AI修改，推荐）
 node render_per_scene.js `
   --config config.json `
   --output-dir output/ `
   [--bgm bgm.mp3] `
   [--output final.mp4] `
   [--voice zh-CN-YunjianNeural] `
-  [--speed 20]
+  [--speed 20] `
+  --input-type text
+
+# URL/网页 → AI提炼要点 → 生成口播
+node render_per_scene.js `
+  --config config.json `
+  --input-type url
+
+# 文件 → 解析 → 生成口播
+node render_per_scene.js `
+  --config config.json `
+  --input-type file
 ```
+
+**默认行为**（未指定 `--input-type` 时）：等效于 `--input-type text`
 
 **输出结构**：
 ```
